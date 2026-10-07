@@ -57,6 +57,22 @@ final class MonopolathyTests: XCTestCase {
         XCTAssertEqual(engine.players[0].cash, 1_700)
     }
 
+    func testGetOutOfJailFreeCardLeavesAndReturnsToItsDeck() {
+        let cards = [MonopolyCard(id: "test-jail-card", deck: .chance, effect: .getOutOfJailFree)]
+        let engine = GameEngine(dice: { (3, 4) }, deckOrder: cards)
+        engine.start(endpoints: fourPlayers)
+        let player = engine.players[0]
+        XCTAssertTrue(engine.submit(.rollDice))
+        XCTAssertEqual(engine.players[0].getOutOfJailFreeCards, 1)
+        XCTAssertEqual(engine.players[0].getOutOfJailFreeDecks, [.chance])
+        XCTAssertEqual(engine.cardCountForTesting(.chance), 0)
+        engine.sendToJailForTesting(player.id)
+        engine.makeCurrentForTesting(player.id)
+        XCTAssertTrue(engine.submit(.useGetOutOfJailFree))
+        XCTAssertEqual(engine.players[0].getOutOfJailFreeCards, 0)
+        XCTAssertEqual(engine.cardCountForTesting(.chance), 1)
+    }
+
     func testCardDirectedUnownedPropertyOffersPurchase() {
         let cards = [MonopolyCard(id: "test-illinois", deck: .chance, effect: .moveTo(24, collectGo: true))]
         let engine = GameEngine(dice: { (3, 4) }, deckOrder: cards)

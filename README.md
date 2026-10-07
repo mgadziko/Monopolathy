@@ -20,6 +20,8 @@ the app, rather than any model, is the authoritative rules engine.
   Get Out of Jail Free ownership. Card-directed movement resolves its
   destination normally, including purchase decisions, chained card spaces,
   double railroad rent, and the utility card's fresh rent roll.
+- A held Get Out of Jail Free card is removed from its originating deck and is
+  returned only when used or when its holder leaves the game.
 - Validated auction state for declined properties, plus mortgage state that
   pays half the purchase price and blocks invalid repeat mortgages. Auctions
   follow the standard rule that the player who declined the property may still

@@ -122,6 +122,8 @@ struct Player: Identifiable, Codable, Equatable {
     var properties: Set<Int>
     var inJailTurns: Int
     var getOutOfJailFreeCards: Int
+    /// Which decks supplied the held cards, so each can be returned correctly.
+    var getOutOfJailFreeDecks: [CardDeck]
     var bankrupt: Bool
 
     var netWorth: Int {

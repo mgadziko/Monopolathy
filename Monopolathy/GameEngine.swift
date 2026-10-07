@@ -74,7 +74,7 @@ final class GameEngine: ObservableObject {
         }
         let tokens = ["car", "hat", "dog", "ship"]
         players = unique.enumerated().map { index, endpoint in
-            Player(id: UUID(), name: endpoint.displayName, endpoint: endpoint, kind: .ai, token: tokens[index], position: 0, cash: startingCash, properties: [], inJailTurns: 0, getOutOfJailFreeCards: 0, bankrupt: false)
+            Player(id: UUID(), name: endpoint.displayName, endpoint: endpoint, kind: .ai, token: tokens[index], position: 0, cash: startingCash, properties: [], inJailTurns: 0, getOutOfJailFreeCards: 0, getOutOfJailFreeDecks: [], bankrupt: false)
         }
         currentPlayerIndex = 0
         phase = .awaitingRoll
@@ -352,10 +352,12 @@ final class GameEngine: ObservableObject {
     }
 
     private func useGetOutOfJailFree() {
-        guard var player = currentPlayer, player.getOutOfJailFreeCards > 0 else { return }
+        guard var player = currentPlayer, let deck = player.getOutOfJailFreeDecks.first else { return }
+        player.getOutOfJailFreeDecks.removeFirst()
         player.getOutOfJailFreeCards -= 1
         player.inJailTurns = 0
         update(player)
+        returnGetOutOfJailFreeCard(to: deck)
         append("\(player.name) used a Get Out of Jail Free card.")
     }
 
@@ -364,14 +366,15 @@ final class GameEngine: ObservableObject {
         var cards = deck == .chance ? chanceCards : communityChestCards
         guard !cards.isEmpty else { return false }
         let card = cards.removeFirst()
-        cards.append(card)
+        let held = card.effect == .getOutOfJailFree
+        if !held { cards.append(card) }
         if deck == .chance { chanceCards = cards } else { communityChestCards = cards }
         append("\(deck == .chance ? "Chance" : "Community Chest") card: \(card.id).")
-        return resolve(card.effect, for: playerID)
+        return resolve(card.effect, for: playerID, getOutOfJailFreeDeck: held ? deck : nil)
     }
 
     /// Returns true when a card-directed landing is awaiting a purchase choice.
-    private func resolve(_ effect: CardEffect, for playerID: UUID) -> Bool {
+    private func resolve(_ effect: CardEffect, for playerID: UUID, getOutOfJailFreeDeck: CardDeck? = nil) -> Bool {
         guard let player = player(withID: playerID) else { return false }
         switch effect {
         case let .moveTo(destination, collectGo):
@@ -401,7 +404,12 @@ final class GameEngine: ObservableObject {
             for payer in players where payer.id != playerID && !payer.bankrupt { transfer(amount: amount, from: payer.id, to: playerID) }
         case .goToJail: sendToJail(playerID: playerID, reason: "card")
         case .getOutOfJailFree:
-            var updated = player; updated.getOutOfJailFreeCards += 1; update(updated); append("\(updated.name) received a Get Out of Jail Free card.")
+            guard let getOutOfJailFreeDeck else { return false }
+            var updated = player
+            updated.getOutOfJailFreeCards += 1
+            updated.getOutOfJailFreeDecks.append(getOutOfJailFreeDeck)
+            update(updated)
+            append("\(updated.name) received a Get Out of Jail Free card.")
         case let .propertyRepairs(perHouse, perHotel):
             let amount = player.properties.reduce(0) { partial, spaceID in
                 let buildings = buildingsBySpaceID[spaceID, default: 0]
@@ -487,11 +495,19 @@ final class GameEngine: ObservableObject {
     private func update(_ player: Player) { if let index = players.firstIndex(where: { $0.id == player.id }) { players[index] = player } }
     private func append(_ text: String) { log.insert(GameLogEntry(text: text), at: 0) }
 
+    private func returnGetOutOfJailFreeCard(to deck: CardDeck) {
+        guard let card = MonopolyCard.standardDeck.first(where: { $0.deck == deck && $0.effect == .getOutOfJailFree }) else { return }
+        if deck == .chance { chanceCards.append(card) } else { communityChestCards.append(card) }
+    }
+
     private func resolveBankruptcyIfNeeded(playerID: UUID, creditorID: UUID?) {
         guard let debtorIndex = players.firstIndex(where: { $0.id == playerID }), players[debtorIndex].cash < 0 else { return }
         let properties = players[debtorIndex].properties
+        let jailCardDecks = players[debtorIndex].getOutOfJailFreeDecks
         for spaceID in properties { buildingsBySpaceID[spaceID] = nil }
         players[debtorIndex].properties.removeAll()
+        players[debtorIndex].getOutOfJailFreeCards = 0
+        players[debtorIndex].getOutOfJailFreeDecks.removeAll()
         players[debtorIndex].cash = 0
         players[debtorIndex].bankrupt = true
         if let creditorID, let creditorIndex = players.firstIndex(where: { $0.id == creditorID }) {
@@ -501,6 +517,7 @@ final class GameEngine: ObservableObject {
             mortgagedSpaceIDs.subtract(properties)
             append("\(players[debtorIndex].name) went bankrupt; properties returned to the bank.")
         }
+        jailCardDecks.forEach { returnGetOutOfJailFreeCard(to: $0) }
     }
 
     #if DEBUG
@@ -523,5 +540,6 @@ final class GameEngine: ObservableObject {
         players[index].cash = -1
         resolveBankruptcyIfNeeded(playerID: playerID, creditorID: nil)
     }
+    func cardCountForTesting(_ deck: CardDeck) -> Int { deck == .chance ? chanceCards.count : communityChestCards.count }
     #endif
 }
