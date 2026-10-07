@@ -190,6 +190,16 @@ struct ContentView: View {
                 Rectangle().fill(boardColor(for: spaceID)).frame(height: 5)
                 Text(space.name).font(.system(size: 8, weight: .medium)).lineLimit(2).minimumScaleFactor(0.55)
                     .multilineTextAlignment(.center).padding(.horizontal, 2)
+                if let owner = game.ownerBySpaceID[spaceID] {
+                    HStack(spacing: 2) {
+                        Circle().fill(tokenColor(for: owner.id)).frame(width: 6, height: 6)
+                        if game.mortgagedSpaceIDs.contains(spaceID) {
+                            Text("M").font(.system(size: 7, weight: .bold)).foregroundStyle(.red)
+                        } else if let buildings = game.buildingsBySpaceID[spaceID], buildings > 0 {
+                            Text(buildings == 5 ? "H" : String(buildings)).font(.system(size: 7, weight: .bold)).foregroundStyle(.green)
+                        }
+                    }
+                }
                 Spacer(minLength: 0)
                 HStack(spacing: 2) {
                     ForEach(game.players.filter { !$0.bankrupt && $0.position == spaceID }) { player in
