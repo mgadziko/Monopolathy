@@ -292,6 +292,34 @@ final class GameEngine: ObservableObject {
         return true
     }
 
+    func canExecuteTrade(_ offer: TradeOffer) -> Bool {
+        guard offer.fromPlayerID != offer.toPlayerID, offer.fromCash >= 0, offer.toCash >= 0,
+              let from = player(withID: offer.fromPlayerID), let to = player(withID: offer.toPlayerID),
+              !from.bankrupt, !to.bankrupt, from.cash >= offer.fromCash, to.cash >= offer.toCash,
+              offer.fromProperties.isSubset(of: from.properties), offer.toProperties.isSubset(of: to.properties) else { return false }
+        let traded = offer.fromProperties.union(offer.toProperties)
+        return traded.allSatisfy { buildingsBySpaceID[$0, default: 0] == 0 }
+    }
+
+    /// Called only after both player endpoints have accepted the exact offer.
+    /// Mortgaged properties transfer with the standard immediate 10% interest.
+    @discardableResult
+    func executeTrade(_ offer: TradeOffer) -> Bool {
+        guard canExecuteTrade(offer), let fromIndex = players.firstIndex(where: { $0.id == offer.fromPlayerID }), let toIndex = players.firstIndex(where: { $0.id == offer.toPlayerID }) else { return false }
+        let incomingToFrom = offer.toProperties.filter(mortgagedSpaceIDs.contains).reduce(0) { $0 + StandardRules.mortgageValue(for: board[$1]) / 10 }
+        let incomingToTo = offer.fromProperties.filter(mortgagedSpaceIDs.contains).reduce(0) { $0 + StandardRules.mortgageValue(for: board[$1]) / 10 }
+        guard players[fromIndex].cash - offer.fromCash + offer.toCash >= incomingToFrom,
+              players[toIndex].cash - offer.toCash + offer.fromCash >= incomingToTo else { return false }
+        players[fromIndex].cash += offer.toCash - offer.fromCash - incomingToFrom
+        players[toIndex].cash += offer.fromCash - offer.toCash - incomingToTo
+        players[fromIndex].properties.subtract(offer.fromProperties)
+        players[fromIndex].properties.formUnion(offer.toProperties)
+        players[toIndex].properties.subtract(offer.toProperties)
+        players[toIndex].properties.formUnion(offer.fromProperties)
+        append("Trade completed between \(players[fromIndex].name) and \(players[toIndex].name).")
+        return true
+    }
+
     private func payJailFine() {
         guard let player = currentPlayer else { return }
         charge(playerID: player.id, amount: 50, reason: "jail fine")
@@ -352,7 +380,10 @@ final class GameEngine: ObservableObject {
             var updated = player; updated.cash += amount; update(updated); append("\(updated.name) collected $\(amount).")
         case let .payBank(amount): charge(playerID: playerID, amount: amount, reason: "card")
         case let .payEachPlayer(amount):
-            for recipient in players where recipient.id != playerID && !recipient.bankrupt { transfer(amount: amount, from: playerID, to: recipient.id) }
+            for recipient in players where recipient.id != playerID && !recipient.bankrupt {
+                guard player(withID: playerID)?.bankrupt == false else { break }
+                transfer(amount: amount, from: playerID, to: recipient.id)
+            }
         case let .collectFromEachPlayer(amount):
             for payer in players where payer.id != playerID && !payer.bankrupt { transfer(amount: amount, from: payer.id, to: playerID) }
         case .goToJail: sendToJail(playerID: playerID, reason: "card")
@@ -369,8 +400,8 @@ final class GameEngine: ObservableObject {
 
     private func beginExtraRoll() { phase = .awaitingRoll; append("\(currentPlayer?.name ?? "Player") rolls again.") }
     private func endTurn() { guard !players.isEmpty else { return }; doublesThisTurn = 0; currentPlayerIndex = (currentPlayerIndex + 1) % players.count; phase = .awaitingRoll; pendingAction = .none }
-    private func charge(playerID: UUID, amount: Int, reason: String) { guard let index = players.firstIndex(where: { $0.id == playerID }) else { return }; players[index].cash -= amount; append("\(players[index].name) paid $\(amount) for \(reason).") }
-    private func transfer(amount: Int, from payerID: UUID, to ownerID: UUID) { guard let payer = players.firstIndex(where: { $0.id == payerID }), let owner = players.firstIndex(where: { $0.id == ownerID }) else { return }; players[payer].cash -= amount; players[owner].cash += amount; append("\(players[payer].name) paid \(players[owner].name) $\(amount) rent.") }
+    private func charge(playerID: UUID, amount: Int, reason: String) { guard let index = players.firstIndex(where: { $0.id == playerID }) else { return }; players[index].cash -= amount; append("\(players[index].name) paid $\(amount) for \(reason)."); resolveBankruptcyIfNeeded(playerID: playerID, creditorID: nil) }
+    private func transfer(amount: Int, from payerID: UUID, to ownerID: UUID) { guard let payer = players.firstIndex(where: { $0.id == payerID }), let owner = players.firstIndex(where: { $0.id == ownerID }) else { return }; players[payer].cash -= amount; players[owner].cash += amount; append("\(players[payer].name) paid \(players[owner].name) $\(amount) rent."); resolveBankruptcyIfNeeded(playerID: payerID, creditorID: ownerID) }
     private func rentFor(space: BoardSpace, ownerID: UUID) -> Int { switch space.kind { case .railroad: let count = player(withID: ownerID)?.properties.filter { board[$0].kind == .railroad }.count ?? 0; return [25, 50, 100, 200][max(0, min(count - 1, 3))]; case .utility: let count = player(withID: ownerID)?.properties.filter { board[$0].kind == .utility }.count ?? 0; return (count == 2 ? 10 : 4) * ((lastRoll?.0 ?? 0) + (lastRoll?.1 ?? 0)); case .property: let set = StandardRules.colorSet(for: space.id); let ownsSet = set.isSubset(of: player(withID: ownerID)?.properties ?? []); return StandardRules.baseRent(spaceID: space.id, buildings: buildingsBySpaceID[space.id, default: 0], ownsColorSet: ownsSet); default: return space.rent } }
     private func sendToJail(playerID: UUID, reason: String) { guard var player = player(withID: playerID) else { return }; player.position = 10; player.inJailTurns = 1; update(player); append("\(player.name) went to jail (\(reason)).") }
     private func owner(of spaceID: Int) -> Player? { players.first { $0.properties.contains(spaceID) } }
@@ -378,10 +409,30 @@ final class GameEngine: ObservableObject {
     private func update(_ player: Player) { if let index = players.firstIndex(where: { $0.id == player.id }) { players[index] = player } }
     private func append(_ text: String) { log.insert(GameLogEntry(text: text), at: 0) }
 
+    private func resolveBankruptcyIfNeeded(playerID: UUID, creditorID: UUID?) {
+        guard let debtorIndex = players.firstIndex(where: { $0.id == playerID }), players[debtorIndex].cash < 0 else { return }
+        let properties = players[debtorIndex].properties
+        for spaceID in properties { buildingsBySpaceID[spaceID] = nil }
+        players[debtorIndex].properties.removeAll()
+        players[debtorIndex].cash = 0
+        players[debtorIndex].bankrupt = true
+        if let creditorID, let creditorIndex = players.firstIndex(where: { $0.id == creditorID }) {
+            players[creditorIndex].properties.formUnion(properties)
+            append("\(players[debtorIndex].name) went bankrupt; assets transferred to \(players[creditorIndex].name).")
+        } else {
+            mortgagedSpaceIDs.subtract(properties)
+            append("\(players[debtorIndex].name) went bankrupt; properties returned to the bank.")
+        }
+    }
+
     #if DEBUG
     func grantPropertiesForTesting(_ spaces: Set<Int>, to playerID: UUID) {
         guard let index = players.firstIndex(where: { $0.id == playerID }) else { return }
         players[index].properties.formUnion(spaces)
+    }
+    func setCashForTesting(_ cash: Int, for playerID: UUID) {
+        guard let index = players.firstIndex(where: { $0.id == playerID }) else { return }
+        players[index].cash = cash
     }
     #endif
 }

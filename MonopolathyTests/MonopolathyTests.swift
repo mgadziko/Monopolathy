@@ -114,6 +114,38 @@ final class MonopolathyTests: XCTestCase {
         XCTAssertEqual(engine.availableHotels, 12)
     }
 
+    func testTradeTransfersCashAndUndevelopedProperties() {
+        let engine = GameEngine()
+        engine.start(endpoints: fourPlayers)
+        let first = engine.players[0]
+        let second = engine.players[1]
+        engine.grantPropertiesForTesting([1], to: first.id)
+        engine.grantPropertiesForTesting([3], to: second.id)
+        let offer = TradeOffer(fromPlayerID: first.id, toPlayerID: second.id, fromCash: 100, toCash: 25, fromProperties: [1], toProperties: [3])
+        XCTAssertTrue(engine.canExecuteTrade(offer))
+        XCTAssertTrue(engine.executeTrade(offer))
+        XCTAssertTrue(engine.players[0].properties.contains(3))
+        XCTAssertTrue(engine.players[1].properties.contains(1))
+        XCTAssertEqual(engine.players[0].cash, 1_425)
+        XCTAssertEqual(engine.players[1].cash, 1_575)
+    }
+
+    func testInsolventPlayerTransfersAssetsToCreditor() {
+        let cards = [MonopolyCard(id: "test-payment", deck: .chance, effect: .payEachPlayer(50))]
+        let engine = GameEngine(dice: { (3, 4) }, deckOrder: cards)
+        engine.start(endpoints: fourPlayers)
+        let debtor = engine.players[0]
+        let creditor = engine.players[1]
+        engine.grantPropertiesForTesting([1], to: debtor.id)
+        engine.setCashForTesting(10, for: debtor.id)
+        XCTAssertTrue(engine.submit(.rollDice))
+        XCTAssertTrue(engine.players[0].bankrupt)
+        XCTAssertTrue(engine.players[1].properties.contains(1))
+        XCTAssertEqual(engine.players[0].cash, 0)
+        XCTAssertEqual(engine.players[1].cash, 1_550)
+        XCTAssertEqual(creditor.id, engine.players[1].id)
+    }
+
     func testThreeConsecutiveDoublesSendsPlayerToJail() {
         let sequence = RollSequence([(1, 1), (1, 1), (1, 1)])
         let engine = GameEngine(dice: { sequence.next() })

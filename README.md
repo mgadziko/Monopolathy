@@ -22,10 +22,12 @@ the app, rather than any model, is the authoritative rules engine.
   pays half the purchase price and blocks invalid repeat mortgages.
 - Full-set, unmortgaged-only house and hotel construction with even-building
   and selling enforcement, finite bank inventory, and mortgage restrictions.
+- Validated cash/property trades, including the immediate interest required on
+  transferred mortgaged property, and creditor/bank bankruptcy asset handling.
 - No built-in AI strategy and no remote LLM turns yet.
 
-The remaining standard-rules execution work includes bankruptcy, trading, and
-the structured turn-proposal protocol.
+The remaining standard-rules execution work is the structured turn-proposal
+protocol for Hermes and ChatGPT, along with final rule-edge-case auditing.
 
 ## Build and test
 
