@@ -528,6 +528,14 @@ final class GameEngine: ObservableObject {
         if let creditorID, let creditorIndex = players.firstIndex(where: { $0.id == creditorID }) {
             players[creditorIndex].properties.formUnion(properties)
             append("\(players[debtorIndex].name) went bankrupt; assets transferred to \(players[creditorIndex].name).")
+            let inheritedMortgageInterest = properties
+                .filter(mortgagedSpaceIDs.contains)
+                .reduce(0) { $0 + StandardRules.mortgageValue(for: board[$1]) / 10 }
+            if inheritedMortgageInterest > 0 {
+                players[creditorIndex].cash -= inheritedMortgageInterest
+                append("\(players[creditorIndex].name) paid $\(inheritedMortgageInterest) mortgage interest to the Bank.")
+                resolveBankruptcyIfNeeded(playerID: creditorID, creditorID: nil)
+            }
         } else {
             mortgagedSpaceIDs.subtract(properties)
             append("\(players[debtorIndex].name) went bankrupt; properties returned to the bank.")

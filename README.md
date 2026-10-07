@@ -33,6 +33,8 @@ the app, rather than any model, is the authoritative rules engine.
   that it is finished. The app never chooses those actions for it.
 - Validated cash/property trades, including the immediate interest required on
   transferred mortgaged property, and creditor/bank bankruptcy asset handling.
+  A creditor inheriting a mortgaged property through bankruptcy likewise pays
+  the standard immediate 10% mortgage interest to the Bank.
   Once per turn, a player may make one exact offer; its recipient separately
   accepts or declines that validated offer.
 - Bankruptcy removes the player from turn rotation; the engine records a
