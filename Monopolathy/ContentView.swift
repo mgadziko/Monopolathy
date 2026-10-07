@@ -179,33 +179,33 @@ struct ContentView: View {
 
     private var boardDashboard: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("MONOPOLATHY").font(.system(size: 17, weight: .bold, design: .rounded))
+            Text("MONOPOLATHY").font(.system(size: 21, weight: .bold, design: .rounded))
             Text("\(game.phase.rawValue) • \(game.currentPlayer?.name ?? "—")")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.callout).foregroundStyle(.secondary)
             Text("Bank: \(game.availableHouses) houses • \(game.availableHotels) hotels")
-                .font(.caption2).foregroundStyle(.secondary)
+                .font(.caption).foregroundStyle(.secondary)
             Divider()
             ForEach(game.players) { player in
                 HStack(spacing: 6) {
                     Circle().fill(tokenColor(for: player.id)).frame(width: 9, height: 9)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(player.name).font(.caption.weight(.semibold)).lineLimit(1)
+                        Text(player.name).font(.callout.weight(.semibold)).lineLimit(1)
                         Text("$\(player.cash) • \(game.board[player.position].name)")
-                            .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                            .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                     }
                 }
                 .opacity(player.bankrupt ? 0.45 : 1)
             }
             if let roll = game.lastRoll {
                 Divider()
-                Text("Last roll  \(roll.0) + \(roll.1)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                Text("Last roll  \(roll.0) + \(roll.1)").font(.callout.monospacedDigit()).foregroundStyle(.secondary)
             }
             if let selectedSpaceID {
                 let space = game.board[selectedSpaceID]
                 Divider()
-                Text(space.name).font(.caption.weight(.semibold))
+                Text(space.name).font(.callout.weight(.semibold))
                 Text(spaceDetail(for: selectedSpaceID))
-                    .font(.caption2).foregroundStyle(.secondary).lineLimit(2)
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(2)
             }
         }
         .padding(12)
@@ -221,15 +221,15 @@ struct ContentView: View {
             Rectangle().fill(boardColor(for: spaceID).opacity(0.18))
             VStack(spacing: 2) {
                 Rectangle().fill(boardColor(for: spaceID)).frame(height: 5)
-                Text(space.name).font(.system(size: 8, weight: .medium)).lineLimit(2).minimumScaleFactor(0.55)
+                Text(space.name).font(.system(size: 12, weight: .semibold)).lineLimit(2).minimumScaleFactor(0.7)
                     .multilineTextAlignment(.center).padding(.horizontal, 2)
                 if let owner = game.ownerBySpaceID[spaceID] {
                     HStack(spacing: 2) {
                         Circle().fill(tokenColor(for: owner.id)).frame(width: 6, height: 6)
                         if game.mortgagedSpaceIDs.contains(spaceID) {
-                            Text("M").font(.system(size: 7, weight: .bold)).foregroundStyle(.red)
+                            Text("M").font(.system(size: 10, weight: .bold)).foregroundStyle(.red)
                         } else if let buildings = game.buildingsBySpaceID[spaceID], buildings > 0 {
-                            Text(buildings == 5 ? "H" : String(buildings)).font(.system(size: 7, weight: .bold)).foregroundStyle(.green)
+                            Text(buildings == 5 ? "H" : String(buildings)).font(.system(size: 10, weight: .bold)).foregroundStyle(.green)
                         }
                     }
                 }
