@@ -156,6 +156,14 @@ final class MonopolathyTests: XCTestCase {
         XCTAssertThrowsError(try TurnProtocol.action(from: "I want to roll", allowed: engine.legalActions))
     }
 
+    func testCoordinatorSubmitsOnlyValidatedTransportAction() async throws {
+        let engine = GameEngine(dice: { (1, 2) })
+        engine.start(endpoints: fourPlayers)
+        let action = try await TurnCoordinator().playTurn(engine: engine, transport: FixedTransport(reply: "{\"action\":\"roll_dice\"}"))
+        XCTAssertEqual(action, .rollDice)
+        XCTAssertNotNil(engine.lastRoll)
+    }
+
     func testThreeConsecutiveDoublesSendsPlayerToJail() {
         let sequence = RollSequence([(1, 1), (1, 1), (1, 1)])
         let cards = [MonopolyCard(id: "test-chest", deck: .communityChest, effect: .collect(0))]
@@ -195,4 +203,9 @@ private final class RollSequence {
     private var rolls: [(Int, Int)]
     init(_ rolls: [(Int, Int)]) { self.rolls = rolls }
     func next() -> (Int, Int) { rolls.removeFirst() }
+}
+
+private struct FixedTransport: PlayerTurnTransport {
+    let reply: String
+    func respond(to prompt: String) async throws -> String { reply }
 }

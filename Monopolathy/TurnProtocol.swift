@@ -76,3 +76,37 @@ enum TurnProtocol {
         return action
     }
 }
+
+/// Implementations may call a selected Hermes backend or a connected ChatGPT
+/// plan. They return text only; they never receive permission to alter game
+/// state or invoke tools.
+protocol PlayerTurnTransport: Sendable {
+    func respond(to prompt: String) async throws -> String
+}
+
+enum TurnCoordinatorError: LocalizedError {
+    case proposalRejected(TurnProtocolError)
+    case engineRejected
+
+    var errorDescription: String? {
+        switch self {
+        case let .proposalRejected(error): error.errorDescription
+        case .engineRejected: "The engine rejected an otherwise parsed action."
+        }
+    }
+}
+
+@MainActor
+final class TurnCoordinator {
+    func playTurn(engine: GameEngine, transport: any PlayerTurnTransport) async throws -> GameAction {
+        let snapshot = TurnSnapshot(engine: engine)
+        let reply = try await transport.respond(to: TurnProtocol.prompt(for: snapshot))
+        do {
+            let action = try TurnProtocol.action(from: reply, allowed: engine.legalActions)
+            guard engine.submit(action) else { throw TurnCoordinatorError.engineRejected }
+            return action
+        } catch let error as TurnProtocolError {
+            throw TurnCoordinatorError.proposalRejected(error)
+        }
+    }
+}
