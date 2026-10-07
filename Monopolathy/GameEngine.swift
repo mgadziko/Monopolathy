@@ -25,6 +25,10 @@ final class GameEngine: ObservableObject {
     /// Properties returned to the Bank by a bankruptcy must be auctioned one
     /// at a time before normal turn flow may resume.
     private var bankruptcyAuctionQueue: [Int] = []
+    private struct OutstandingDebt { let playerID: UUID; let creditorID: UUID? }
+    private enum DebtContinuation { case awaitRoll, endTurn, extraRoll }
+    private var outstandingDebt: OutstandingDebt?
+    private var debtContinuation: DebtContinuation = .awaitRoll
 
     private enum CardRentModifier {
         case normal
@@ -39,6 +43,11 @@ final class GameEngine: ObservableObject {
 
     var currentPlayer: Player? {
         players.indices.contains(currentPlayerIndex) ? players[currentPlayerIndex] : nil
+    }
+
+    var playerNeedingDebtResolution: Player? {
+        guard let debt = outstandingDebt else { return nil }
+        return player(withID: debt.playerID)
     }
 
     var ownerBySpaceID: [Int: Player] {
@@ -89,6 +98,7 @@ final class GameEngine: ObservableObject {
         mortgagedSpaceIDs = []
         auction = nil
         bankruptcyAuctionQueue = []
+        outstandingDebt = nil
         chanceCards = (deckOrder ?? MonopolyCard.standardDeck).filter { $0.deck == .chance }
         communityChestCards = (deckOrder ?? MonopolyCard.standardDeck).filter { $0.deck == .communityChest }
         if deckOrder == nil { chanceCards.shuffle(); communityChestCards.shuffle() }
@@ -107,6 +117,7 @@ final class GameEngine: ObservableObject {
         mortgagedSpaceIDs = []
         auction = nil
         bankruptcyAuctionQueue = []
+        outstandingDebt = nil
         log = []
     }
 
@@ -247,11 +258,13 @@ final class GameEngine: ObservableObject {
             self.auction = nil
             if !bankruptcyAuctionQueue.isEmpty {
                 bankruptcyAuctionQueue.removeFirst()
-                beginNextBankruptcyAuction()
-            } else {
-                pendingExtraRoll ? beginExtraRoll() : endTurn()
-                pendingExtraRoll = false
+                if !bankruptcyAuctionQueue.isEmpty {
+                    beginNextBankruptcyAuction()
+                    return true
+                }
             }
+            pendingExtraRoll ? beginExtraRoll() : endTurn()
+            pendingExtraRoll = false
         } else { self.auction = auction }
         return true
     }
@@ -271,7 +284,7 @@ final class GameEngine: ObservableObject {
 
     @discardableResult
     func unmortgage(spaceID: Int, by playerID: UUID) -> Bool {
-        guard mortgagedSpaceIDs.contains(spaceID), let index = players.firstIndex(where: { $0.id == playerID }), players[index].properties.contains(spaceID) else { return false }
+        guard outstandingDebt == nil, mortgagedSpaceIDs.contains(spaceID), let index = players.firstIndex(where: { $0.id == playerID }), players[index].properties.contains(spaceID) else { return false }
         let cost = StandardRules.unmortgageCost(for: board[spaceID])
         guard players[index].cash >= cost else { return false }
         players[index].cash -= cost
@@ -281,7 +294,7 @@ final class GameEngine: ObservableObject {
     }
 
     func canBuild(on spaceID: Int, by playerID: UUID) -> Bool {
-        guard board.indices.contains(spaceID), let player = player(withID: playerID),
+        guard outstandingDebt == nil, board.indices.contains(spaceID), let player = player(withID: playerID),
               board[spaceID].kind == .property, player.properties.contains(spaceID),
               let group = board[spaceID].colorGroup else { return false }
         let spaces = board.filter { $0.kind == .property && $0.colorGroup == group }.map(\.id)
@@ -407,7 +420,7 @@ final class GameEngine: ObservableObject {
         case let .payBank(amount): charge(playerID: playerID, amount: amount, reason: "card")
         case let .payEachPlayer(amount):
             for recipient in players where recipient.id != playerID && !recipient.bankrupt {
-                guard players.first(where: { $0.id == playerID })?.bankrupt == false else { break }
+                guard outstandingDebt == nil, players.first(where: { $0.id == playerID })?.bankrupt == false else { break }
                 transfer(amount: amount, from: playerID, to: recipient.id)
             }
         case let .collectFromEachPlayer(amount):
@@ -474,12 +487,14 @@ final class GameEngine: ObservableObject {
     }
 
     private func beginExtraRoll() {
+        if outstandingDebt != nil { debtContinuation = .extraRoll; return }
         guard currentPlayer?.bankrupt != true else { endTurn(); return }
         phase = .awaitingRoll
         append("\(currentPlayer?.name ?? "Player") rolls again.")
     }
 
     private func endTurn() {
+        if outstandingDebt != nil { debtContinuation = .endTurn; return }
         // A bankruptcy may have opened a mandatory Bank auction while the
         // previous landing was resolving. Keep that auction in control.
         guard auction == nil else { return }
@@ -503,8 +518,44 @@ final class GameEngine: ObservableObject {
         currentPlayerIndex = nextIndex
         phase = .awaitingRoll
     }
-    private func charge(playerID: UUID, amount: Int, reason: String) { guard let index = players.firstIndex(where: { $0.id == playerID }) else { return }; players[index].cash -= amount; append("\(players[index].name) paid $\(amount) for \(reason)."); resolveBankruptcyIfNeeded(playerID: playerID, creditorID: nil) }
-    private func transfer(amount: Int, from payerID: UUID, to ownerID: UUID) { guard let payer = players.firstIndex(where: { $0.id == payerID }), let owner = players.firstIndex(where: { $0.id == ownerID }) else { return }; players[payer].cash -= amount; players[owner].cash += amount; append("\(players[payer].name) paid \(players[owner].name) $\(amount) rent."); resolveBankruptcyIfNeeded(playerID: payerID, creditorID: ownerID) }
+    private func charge(playerID: UUID, amount: Int, reason: String) {
+        guard let index = players.firstIndex(where: { $0.id == playerID }) else { return }
+        players[index].cash -= amount
+        append("\(players[index].name) paid $\(amount) for \(reason).")
+        recordDebtIfNeeded(playerID: playerID, creditorID: nil)
+    }
+    private func transfer(amount: Int, from payerID: UUID, to ownerID: UUID) {
+        guard let payer = players.firstIndex(where: { $0.id == payerID }), let owner = players.firstIndex(where: { $0.id == ownerID }) else { return }
+        players[payer].cash -= amount
+        players[owner].cash += amount
+        append("\(players[payer].name) paid \(players[owner].name) $\(amount) rent.")
+        recordDebtIfNeeded(playerID: payerID, creditorID: ownerID)
+    }
+
+    /// Called after an endpoint has finished selling buildings and mortgaging
+    /// assets. A negative balance is a voluntary declaration of bankruptcy.
+    @discardableResult
+    func resolveOutstandingDebt(by playerID: UUID) -> Bool {
+        guard let debt = outstandingDebt, debt.playerID == playerID else { return false }
+        outstandingDebt = nil
+        if player(withID: playerID)?.cash ?? 0 < 0 {
+            resolveBankruptcyIfNeeded(playerID: playerID, creditorID: debt.creditorID)
+        }
+        switch debtContinuation {
+        case .awaitRoll: phase = .awaitingRoll
+        case .endTurn: endTurn()
+        case .extraRoll: beginExtraRoll()
+        }
+        return true
+    }
+
+    private func recordDebtIfNeeded(playerID: UUID, creditorID: UUID?) {
+        guard let player = player(withID: playerID), player.cash < 0 else { return }
+        outstandingDebt = OutstandingDebt(playerID: playerID, creditorID: creditorID)
+        debtContinuation = .awaitRoll
+        phase = .resolvingAI
+        append("\(player.name) must sell buildings or mortgage property before declaring bankruptcy.")
+    }
     private func rentFor(space: BoardSpace, ownerID: UUID) -> Int {
         guard !mortgagedSpaceIDs.contains(space.id) else { return 0 }
         switch space.kind {

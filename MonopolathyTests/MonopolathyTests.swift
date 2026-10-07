@@ -200,11 +200,31 @@ final class MonopolathyTests: XCTestCase {
         engine.grantPropertiesForTesting([1], to: debtor.id)
         engine.setCashForTesting(10, for: debtor.id)
         XCTAssertTrue(engine.submit(.rollDice))
+        XCTAssertEqual(engine.playerNeedingDebtResolution?.id, debtor.id)
+        XCTAssertTrue(engine.resolveOutstandingDebt(by: debtor.id))
         XCTAssertTrue(engine.players[0].bankrupt)
         XCTAssertTrue(engine.players[1].properties.contains(1))
         XCTAssertEqual(engine.players[0].cash, 0)
         XCTAssertEqual(engine.players[1].cash, 1_550)
         XCTAssertEqual(creditor.id, engine.players[1].id)
+        XCTAssertEqual(engine.currentPlayerIndex, 1)
+    }
+
+    func testPlayerCanMortgageBeforeDeclaringBankruptcy() {
+        let cards = [MonopolyCard(id: "test-bank-payment", deck: .chance, effect: .payBank(20))]
+        let engine = GameEngine(dice: { (3, 4) }, deckOrder: cards)
+        engine.start(endpoints: fourPlayers)
+        let debtor = engine.players[0]
+        engine.grantPropertiesForTesting([1], to: debtor.id)
+        engine.setCashForTesting(10, for: debtor.id)
+
+        XCTAssertTrue(engine.submit(.rollDice))
+        XCTAssertEqual(engine.phase, .resolvingAI)
+        XCTAssertTrue(engine.mortgage(spaceID: 1, by: debtor.id))
+        XCTAssertTrue(engine.resolveOutstandingDebt(by: debtor.id))
+
+        XCTAssertFalse(engine.players[0].bankrupt)
+        XCTAssertEqual(engine.players[0].cash, 20)
         XCTAssertEqual(engine.currentPlayerIndex, 1)
     }
 
@@ -219,6 +239,7 @@ final class MonopolathyTests: XCTestCase {
         engine.setCashForTesting(10, for: debtor.id)
 
         XCTAssertTrue(engine.submit(.rollDice))
+        XCTAssertTrue(engine.resolveOutstandingDebt(by: debtor.id))
 
         XCTAssertTrue(engine.players[0].bankrupt)
         XCTAssertTrue(engine.players[1].properties.contains(1))
@@ -237,6 +258,7 @@ final class MonopolathyTests: XCTestCase {
         engine.setCashForTesting(10, for: debtor.id)
 
         XCTAssertTrue(engine.submit(.rollDice))
+        XCTAssertTrue(engine.resolveOutstandingDebt(by: debtor.id))
         XCTAssertTrue(engine.players[0].bankrupt)
         XCTAssertEqual(engine.phase, .auction)
         XCTAssertEqual(engine.auction?.spaceID, 1)

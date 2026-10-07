@@ -31,6 +31,11 @@ the app, rather than any model, is the authoritative rules engine.
 - Before each turn, the player endpoint may make validated asset-management
   decisions—build, sell a building, mortgage, or unmortgage—until it replies
   that it is finished. The app never chooses those actions for it.
+- If a payment makes a player insolvent, play pauses for that player to sell
+  buildings or mortgage eligible property. Only when it replies that it is
+  finished does the engine either resume the interrupted turn or process a
+  standard bankruptcy; it never eliminates a player merely for a temporary
+  negative balance.
 - Validated cash/property trades, including the immediate interest required on
   transferred mortgaged property, and creditor/bank bankruptcy asset handling.
   A creditor inheriting a mortgaged property through bankruptcy likewise pays

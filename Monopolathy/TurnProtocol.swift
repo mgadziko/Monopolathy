@@ -401,8 +401,11 @@ enum AssetProtocol {
     static func prompt(for snapshot: AssetSnapshot) -> String {
         let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
         let state = String(data: (try? encoder.encode(snapshot)) ?? Data(), encoding: .utf8) ?? "{}"
+        let instruction = snapshot.cash < 0
+            ? "You owe money. Sell buildings or mortgage legal property until you can pay; reply done only to declare bankruptcy or after restoring a non-negative balance."
+            : "Before rolling, you may make one legal asset-management action or finish."
         return """
-        You are \(snapshot.playerName), playing standard-rules Monopoly. Before rolling, you may make one legal asset-management action or finish. Strategy is entirely yours; the game validates everything.
+        You are \(snapshot.playerName), playing standard-rules Monopoly. \(instruction) Strategy is entirely yours; the game validates everything.
 
         Asset state JSON:
         \(state)

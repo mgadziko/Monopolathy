@@ -313,6 +313,8 @@ struct ContentView: View {
         while isAutoPlaying, !Task.isCancelled, decisions < 10_000 {
             if game.phase == .auction {
                 guard await askNextAuctionBidder() else { break }
+            } else if game.playerNeedingDebtResolution != nil {
+                guard await settleOutstandingDebt() else { break }
             } else {
                 guard game.phase != .trading, game.phase != .gameOver else { break }
                 guard await manageAssetsIfNeeded() else { break }
@@ -404,6 +406,30 @@ struct ContentView: View {
             }
         }
         playerTurnStatus = "Asset-management limit reached for \(player.name)."
+        return false
+    }
+
+    @MainActor private func settleOutstandingDebt() async -> Bool {
+        guard let player = game.playerNeedingDebtResolution else { return false }
+        guard player.endpoint.hermesProfileName != nil else {
+            playerTurnStatus = "ChatGPT connection is not configured yet."
+            return false
+        }
+        for _ in 0..<40 {
+            isAskingPlayer = true
+            playerTurnStatus = "Waiting for \(player.name) to settle debt…"
+            defer { isAskingPlayer = false }
+            do {
+                let decision = try await AssetCoordinator().requestDecision(engine: game, player: player, transport: HermesTurnTransport(endpoint: player.endpoint))
+                if decision == .done {
+                    return game.resolveOutstandingDebt(by: player.id)
+                }
+            } catch {
+                playerTurnStatus = error.localizedDescription
+                return false
+            }
+        }
+        playerTurnStatus = "Debt-settlement limit reached for \(player.name)."
         return false
     }
 }
