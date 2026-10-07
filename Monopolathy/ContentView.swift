@@ -14,6 +14,7 @@ struct ContentView: View {
     @State private var tradeWindowPlayerID: UUID?
     @State private var assetWindowPlayerID: UUID?
     @State private var playerTurnStatus: String?
+    @State private var selectedSpaceID: Int?
 
     private var activeEndpoints: [PlayerEndpoint] {
         PlayerEndpoint.allCases.filter { availability[$0]?.isAvailable == true }
@@ -197,6 +198,13 @@ struct ContentView: View {
                 Divider()
                 Text("Last roll  \(roll.0) + \(roll.1)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
             }
+            if let selectedSpaceID {
+                let space = game.board[selectedSpaceID]
+                Divider()
+                Text(space.name).font(.caption.weight(.semibold))
+                Text(spaceDetail(for: selectedSpaceID))
+                    .font(.caption2).foregroundStyle(.secondary).lineLimit(2)
+            }
         }
         .padding(12)
         .frame(maxWidth: 245, alignment: .leading)
@@ -234,6 +242,19 @@ struct ContentView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .overlay(Rectangle().stroke(.secondary.opacity(0.3), lineWidth: 0.5))
+        .onTapGesture { selectedSpaceID = spaceID }
+    }
+
+    private func spaceDetail(for spaceID: Int) -> String {
+        let space = game.board[spaceID]
+        guard space.isPurchasable else { return space.kind.rawValue }
+        var details = ["Price $\(space.price)"]
+        if let owner = game.ownerBySpaceID[spaceID] { details.append("Owner \(owner.name)") }
+        else { details.append("Unowned") }
+        if game.mortgagedSpaceIDs.contains(spaceID) { details.append("Mortgaged") }
+        let buildings = game.buildingsBySpaceID[spaceID, default: 0]
+        if buildings > 0 { details.append(buildings == 5 ? "Hotel" : "\(buildings) house\(buildings == 1 ? "" : "s")") }
+        return details.joined(separator: " • ")
     }
 
     private func boardSpaceID(row: Int, column: Int) -> Int? {

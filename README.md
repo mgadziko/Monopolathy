@@ -65,7 +65,8 @@ the app, rather than any model, is the authoritative rules engine.
 - The live table includes a complete board view: player tokens move around the
   standard 40 spaces. Its central live scoreboard keeps the current phase,
   player, player-color key, cash, locations, and last roll visible, while the
-  side panel retains the chronological table log.
+  side panel retains the chronological table log. Select a board space to
+  inspect its price, owner, mortgage state, and development.
 - No built-in AI strategy and no ChatGPT connection yet.
 
 The remaining work is a user-authorized ChatGPT sign-in flow and continued
