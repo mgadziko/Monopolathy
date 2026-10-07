@@ -51,6 +51,9 @@ struct MonopolathyApp: App {
                 .frame(minWidth: 1100, minHeight: 760)
         }
         .commands {
+            CommandGroup(replacing: .appInfo) {
+                Button("About Monopathy") { AboutBoxController.shared.show() }
+            }
             CommandGroup(replacing: .saveItem) {
                 Button("Save Game…") { session.saveGame() }
                     .keyboardShortcut("s", modifiers: .command)
