@@ -24,10 +24,13 @@ the app, rather than any model, is the authoritative rules engine.
   and selling enforcement, finite bank inventory, and mortgage restrictions.
 - Validated cash/property trades, including the immediate interest required on
   transferred mortgaged property, and creditor/bank bankruptcy asset handling.
+- A strict, JSON-only turn-proposal protocol: endpoints receive a table
+  snapshot and their current legal actions; malformed or illegal proposals are
+  rejected before they can touch game state.
 - No built-in AI strategy and no remote LLM turns yet.
 
-The remaining standard-rules execution work is the structured turn-proposal
-protocol for Hermes and ChatGPT, along with final rule-edge-case auditing.
+The remaining work is live Hermes/ChatGPT transport wiring and final
+rule-edge-case auditing. No endpoint will receive general tool access.
 
 ## Build and test
 

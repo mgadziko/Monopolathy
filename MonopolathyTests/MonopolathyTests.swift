@@ -146,9 +146,20 @@ final class MonopolathyTests: XCTestCase {
         XCTAssertEqual(creditor.id, engine.players[1].id)
     }
 
+    func testTurnProtocolAcceptsOnlyCurrentLegalJSONAction() throws {
+        let engine = GameEngine()
+        engine.start(endpoints: fourPlayers)
+        let snapshot = TurnSnapshot(engine: engine)
+        XCTAssertEqual(snapshot.legalActions, ["roll_dice"])
+        XCTAssertEqual(try TurnProtocol.action(from: "{\"action\":\"roll_dice\"}", allowed: engine.legalActions), .rollDice)
+        XCTAssertThrowsError(try TurnProtocol.action(from: "{\"action\":\"buy_property\"}", allowed: engine.legalActions))
+        XCTAssertThrowsError(try TurnProtocol.action(from: "I want to roll", allowed: engine.legalActions))
+    }
+
     func testThreeConsecutiveDoublesSendsPlayerToJail() {
         let sequence = RollSequence([(1, 1), (1, 1), (1, 1)])
-        let engine = GameEngine(dice: { sequence.next() })
+        let cards = [MonopolyCard(id: "test-chest", deck: .communityChest, effect: .collect(0))]
+        let engine = GameEngine(dice: { sequence.next() }, deckOrder: cards)
         engine.start(endpoints: fourPlayers)
 
         XCTAssertTrue(engine.submit(.rollDice))

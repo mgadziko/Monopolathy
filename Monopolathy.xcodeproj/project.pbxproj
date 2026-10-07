@@ -12,6 +12,7 @@
 		111111111111111111111103 /* GameEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111111111111111111111003 /* GameEngine.swift */; };
 		111111111111111111111104 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111111111111111111111004 /* ContentView.swift */; };
 		111111111111111111111106 /* StandardRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111111111111111111111008 /* StandardRules.swift */; };
+		111111111111111111111107 /* TurnProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111111111111111111111009 /* TurnProtocol.swift */; };
 		111111111111111111111105 /* MonopolathyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111111111111111111111005 /* MonopolathyTests.swift */; };
 /* End PBXBuildFile section */
 
@@ -32,6 +33,7 @@
 		111111111111111111111004 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		111111111111111111111005 /* MonopolathyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MonopolathyTests.swift; sourceTree = "<group>"; };
 		111111111111111111111008 /* StandardRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StandardRules.swift; sourceTree = "<group>"; };
+		111111111111111111111009 /* TurnProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TurnProtocol.swift; sourceTree = "<group>"; };
 		111111111111111111111006 /* Monopolathy.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Monopolathy.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		111111111111111111111007 /* MonopolathyTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MonopolathyTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -71,6 +73,7 @@
 				111111111111111111111003 /* GameEngine.swift */,
 				111111111111111111111004 /* ContentView.swift */,
 				111111111111111111111008 /* StandardRules.swift */,
+				111111111111111111111009 /* TurnProtocol.swift */,
 			);
 			path = Monopolathy;
 			sourceTree = "<group>";
@@ -195,6 +198,7 @@
 				111111111111111111111103 /* GameEngine.swift in Sources */,
 				111111111111111111111104 /* ContentView.swift in Sources */,
 				111111111111111111111106 /* StandardRules.swift in Sources */,
+				111111111111111111111107 /* TurnProtocol.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
