@@ -189,7 +189,11 @@ struct ContentView: View {
                 HStack(spacing: 6) {
                     Circle().fill(tokenColor(for: player.id)).frame(width: 9, height: 9)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(player.name).font(.callout.weight(.semibold)).lineLimit(1)
+                        HStack(spacing: 4) {
+                            Text(player.name).font(.callout.weight(.semibold)).lineLimit(1)
+                            Spacer(minLength: 2)
+                            ownershipDots(for: player)
+                        }
                         Text("$\(player.cash) • \(game.board[player.position].name)")
                             .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                     }
@@ -213,6 +217,16 @@ struct ContentView: View {
         .background(.regularMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(.secondary.opacity(0.35)))
+    }
+
+    private func ownershipDots(for player: Player) -> some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.fixed(7), spacing: 2), count: 8), spacing: 2) {
+            ForEach(player.properties.sorted(), id: \.self) { spaceID in
+                Circle().fill(boardColor(for: spaceID)).frame(width: 7, height: 7)
+                    .overlay(Circle().stroke(.white.opacity(0.7), lineWidth: 0.5))
+            }
+        }
+        .frame(width: 70, alignment: .trailing)
     }
 
     @ViewBuilder private func boardSpace(_ spaceID: Int) -> some View {
