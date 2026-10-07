@@ -135,7 +135,7 @@ struct ContentView: View {
                 } label: {
                     Label(isAutoPlaying ? "Stop Automatic Play" : "Resume Automatic Play", systemImage: isAutoPlaying ? "stop.fill" : "play.fill")
                 }
-                .disabled(isAskingPlayer || game.phase == .auction || game.phase == .trading || game.phase == .gameOver)
+                .disabled(isAskingPlayer || game.phase == .trading || game.phase == .gameOver)
                 Button("New Game") {
                     isAutoPlaying = false
                     game.returnToLobby()
@@ -178,7 +178,7 @@ struct ContentView: View {
     }
 
     @MainActor private func beginAutomaticPlay() {
-        guard !isAutoPlaying, game.phase != .auction, game.phase != .trading, game.phase != .gameOver else { return }
+        guard !isAutoPlaying, game.phase != .trading, game.phase != .gameOver else { return }
         isAutoPlaying = true
         Task { await playAutomatically() }
     }
@@ -190,16 +190,46 @@ struct ContentView: View {
         defer { isAutoPlaying = false }
         var decisions = 0
         while isAutoPlaying, !Task.isCancelled, decisions < 10_000 {
-            guard game.phase != .auction, game.phase != .trading, game.phase != .gameOver else { break }
-            guard await askCurrentPlayer() else { break }
+            if game.phase == .auction {
+                guard await askNextAuctionBidder() else { break }
+            } else {
+                guard game.phase != .trading, game.phase != .gameOver else { break }
+                guard await askCurrentPlayer() else { break }
+            }
             decisions += 1
         }
-        if game.phase == .auction {
-            playerTurnStatus = "Automatic play paused for an auction; bidding protocol is next."
-        } else if game.phase == .trading {
+        if game.phase == .trading {
             playerTurnStatus = "Automatic play paused for a trade."
         } else if decisions == 10_000 {
             playerTurnStatus = "Automatic play stopped after 10,000 decisions."
+        }
+    }
+
+    @MainActor private func askNextAuctionBidder() async -> Bool {
+        guard let auction = game.auction else { return false }
+        guard let bidder = game.players.first(where: {
+            !$0.bankrupt && $0.id != auction.excludedPlayerID && $0.id != auction.leadingBidderID && !auction.passedPlayerIDs.contains($0.id)
+        }) else {
+            playerTurnStatus = "Auction could not find an eligible bidder."
+            return false
+        }
+        guard bidder.endpoint.hermesProfileName != nil else {
+            playerTurnStatus = "ChatGPT connection is not configured yet."
+            return false
+        }
+        isAskingPlayer = true
+        playerTurnStatus = "Waiting for \(bidder.name)'s auction decision…"
+        defer { isAskingPlayer = false }
+        do {
+            let decision = try await AuctionCoordinator().requestAuctionDecision(engine: game, bidder: bidder, transport: HermesTurnTransport(endpoint: bidder.endpoint))
+            switch decision {
+            case let .bid(amount): playerTurnStatus = "\(bidder.name) bid $\(amount)."
+            case .pass: playerTurnStatus = "\(bidder.name) passed."
+            }
+            return true
+        } catch {
+            playerTurnStatus = error.localizedDescription
+            return false
         }
     }
 }

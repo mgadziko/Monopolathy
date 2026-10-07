@@ -19,7 +19,9 @@ the app, rather than any model, is the authoritative rules engine.
   for movement, payments, player-to-player card transfers, repairs, jail, and
   Get Out of Jail Free ownership.
 - Validated auction state for declined properties, plus mortgage state that
-  pays half the purchase price and blocks invalid repeat mortgages.
+  pays half the purchase price and blocks invalid repeat mortgages. Auctions
+  follow the standard rule that the player who declined the property may still
+  bid.
 - Full-set, unmortgaged-only house and hotel construction with even-building
   and selling enforcement, finite bank inventory, and mortgage restrictions.
 - Validated cash/property trades, including the immediate interest required on
@@ -35,13 +37,15 @@ the app, rather than any model, is the authoritative rules engine.
 - Starting a game begins unthrottled automatic play: each active Hermes player
   receives one strict turn request at a time and the next request is made as
   soon as its legal action resolves. **Stop Automatic Play** and **Ask Current
-  Player** remain available controls. Automatic play deliberately pauses for
-  auctions and trades until their multi-player proposal protocols are complete.
+  Player** remain available controls. Auctions use a separate strict `bid` or
+  `pass` JSON proposal per eligible player, and therefore continue
+  automatically. Play pauses for trades until their multi-player protocol is
+  complete.
 - No built-in AI strategy and no ChatGPT connection yet.
 
-The remaining work is a user-authorized ChatGPT sign-in flow, auction/trade
-proposal protocols, and final rule-edge-case auditing. No endpoint will
-receive general tool access.
+The remaining work is a user-authorized ChatGPT sign-in flow, a trade proposal
+protocol, and final rule-edge-case auditing. No endpoint will receive general
+tool access.
 
 ## Build and test
 

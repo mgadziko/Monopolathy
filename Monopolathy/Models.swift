@@ -153,7 +153,9 @@ enum PendingAction: Equatable {
 
 struct AuctionState: Equatable {
     let spaceID: Int
-    let excludedPlayerID: UUID
+    /// Standard Monopoly auctions are open to every non-bankrupt player,
+    /// including the player who declined the initial purchase option.
+    let excludedPlayerID: UUID?
     var leadingBidderID: UUID?
     var leadingBid: Int
     var passedPlayerIDs: Set<UUID>

@@ -111,6 +111,112 @@ final class TurnCoordinator {
     }
 }
 
+struct AuctionSnapshot: Codable, Equatable {
+    let playerID: UUID
+    let playerName: String
+    let playerCash: Int
+    let propertyName: String
+    let currentBid: Int
+    let leadingBidderName: String?
+    let minimumBid: Int
+
+    @MainActor init(engine: GameEngine, bidder: Player) {
+        let auction = engine.auction!
+        playerID = bidder.id
+        playerName = bidder.name
+        playerCash = bidder.cash
+        propertyName = engine.board[auction.spaceID].name
+        currentBid = auction.leadingBid
+        leadingBidderName = auction.leadingBidderID.flatMap { id in engine.players.first(where: { $0.id == id })?.name }
+        minimumBid = auction.leadingBid + 1
+    }
+}
+
+enum AuctionDecision: Equatable {
+    case bid(Int)
+    case pass
+}
+
+private struct ProposedAuctionAction: Decodable {
+    let action: String
+    let amount: Int?
+}
+
+enum AuctionProtocolError: LocalizedError, Equatable {
+    case malformedReply
+    case illegalAction(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .malformedReply: "The auction response was not a valid JSON bid or pass object."
+        case let .illegalAction(action): "The auction proposal is not legal now: \(action)."
+        }
+    }
+}
+
+enum AuctionProtocol {
+    static func prompt(for snapshot: AuctionSnapshot) -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let state = String(data: (try? encoder.encode(snapshot)) ?? Data(), encoding: .utf8) ?? "{}"
+        return """
+        You are \(snapshot.playerName), participating in a standard-rules Monopoly auction. Decide strategy yourself. You may bid any whole-dollar amount from \(snapshot.minimumBid) through \(snapshot.playerCash), or pass permanently. Do not invent other actions.
+
+        Auction state JSON:
+        \(state)
+
+        Reply with exactly one JSON object and no Markdown or explanation:
+        {"action":"bid","amount":whole_dollar_amount}
+        or
+        {"action":"pass"}
+        """
+    }
+
+    static func decision(from reply: String, minimumBid: Int, availableCash: Int) throws -> AuctionDecision {
+        guard let proposal = try? JSONDecoder().decode(ProposedAuctionAction.self, from: Data(reply.trimmingCharacters(in: .whitespacesAndNewlines).utf8)) else { throw AuctionProtocolError.malformedReply }
+        switch proposal.action {
+        case "pass": return .pass
+        case "bid":
+            guard let amount = proposal.amount, amount >= minimumBid, amount <= availableCash else { throw AuctionProtocolError.illegalAction("bid") }
+            return .bid(amount)
+        default: throw AuctionProtocolError.illegalAction(proposal.action)
+        }
+    }
+}
+
+enum AuctionCoordinatorError: LocalizedError {
+    case proposalRejected(AuctionProtocolError)
+    case engineRejected
+
+    var errorDescription: String? {
+        switch self {
+        case let .proposalRejected(error): error.errorDescription
+        case .engineRejected: "The engine rejected an otherwise parsed auction proposal."
+        }
+    }
+}
+
+@MainActor
+final class AuctionCoordinator {
+    func requestAuctionDecision(engine: GameEngine, bidder: Player, transport: any PlayerTurnTransport) async throws -> AuctionDecision {
+        guard let auction = engine.auction else { throw AuctionCoordinatorError.engineRejected }
+        let snapshot = AuctionSnapshot(engine: engine, bidder: bidder)
+        let reply = try await transport.respond(to: AuctionProtocol.prompt(for: snapshot))
+        do {
+            let decision = try AuctionProtocol.decision(from: reply, minimumBid: auction.leadingBid + 1, availableCash: bidder.cash)
+            let applied: Bool
+            switch decision {
+            case let .bid(amount): applied = engine.placeAuctionBid(amount, by: bidder.id)
+            case .pass: applied = engine.passAuction(by: bidder.id)
+            }
+            guard applied else { throw AuctionCoordinatorError.engineRejected }
+            return decision
+        } catch let error as AuctionProtocolError {
+            throw AuctionCoordinatorError.proposalRejected(error)
+        }
+    }
+}
+
 enum HermesTurnTransportError: LocalizedError {
     case profileUnavailable
     case invalidResponse

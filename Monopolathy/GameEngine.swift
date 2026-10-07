@@ -196,14 +196,14 @@ final class GameEngine: ObservableObject {
         guard case let .offerPurchase(spaceID, _) = pendingAction, let player = currentPlayer else { return }
         append("\(player.name) declined \(board[spaceID].name). Auction opened.")
         pendingAction = .none
-        auction = AuctionState(spaceID: spaceID, excludedPlayerID: player.id, leadingBidderID: nil, leadingBid: 0, passedPlayerIDs: [player.id])
+        auction = AuctionState(spaceID: spaceID, excludedPlayerID: nil, leadingBidderID: nil, leadingBid: 0, passedPlayerIDs: [])
         phase = .auction
     }
 
     @discardableResult
     func placeAuctionBid(_ amount: Int, by playerID: UUID) -> Bool {
         guard var auction, let bidder = player(withID: playerID), !bidder.bankrupt,
-              playerID != auction.excludedPlayerID, !auction.passedPlayerIDs.contains(playerID),
+              auction.excludedPlayerID != playerID, !auction.passedPlayerIDs.contains(playerID),
               amount > auction.leadingBid, amount <= bidder.cash else { return false }
         auction.leadingBidderID = playerID
         auction.leadingBid = amount
@@ -216,7 +216,7 @@ final class GameEngine: ObservableObject {
     func passAuction(by playerID: UUID) -> Bool {
         guard var auction, playerID != auction.leadingBidderID else { return false }
         auction.passedPlayerIDs.insert(playerID)
-        let remaining = players.filter { !$0.bankrupt && $0.id != auction.excludedPlayerID && $0.id != auction.leadingBidderID && !auction.passedPlayerIDs.contains($0.id) }
+        let remaining = players.filter { !$0.bankrupt && auction.excludedPlayerID != $0.id && $0.id != auction.leadingBidderID && !auction.passedPlayerIDs.contains($0.id) }
         if remaining.isEmpty {
             if let winnerID = auction.leadingBidderID, let index = players.firstIndex(where: { $0.id == winnerID }) {
                 players[index].cash -= auction.leadingBid

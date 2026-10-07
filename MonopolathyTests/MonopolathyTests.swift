@@ -68,6 +68,7 @@ final class MonopolathyTests: XCTestCase {
         XCTAssertFalse(engine.placeAuctionBid(75, by: engine.players[2].id))
         XCTAssertTrue(engine.passAuction(by: engine.players[2].id))
         XCTAssertTrue(engine.passAuction(by: engine.players[3].id))
+        XCTAssertTrue(engine.passAuction(by: engine.players[0].id))
         XCTAssertTrue(engine.players[1].properties.contains(6))
         XCTAssertEqual(engine.players[1].cash, 1_425)
     }
@@ -162,6 +163,18 @@ final class MonopolathyTests: XCTestCase {
         let action = try await TurnCoordinator().playTurn(engine: engine, transport: FixedTransport(reply: "{\"action\":\"roll_dice\"}"))
         XCTAssertEqual(action, .rollDice)
         XCTAssertNotNil(engine.lastRoll)
+    }
+
+    func testAuctionCoordinatorValidatesAndAppliesBid() async throws {
+        let engine = GameEngine(dice: { (3, 3) })
+        engine.start(endpoints: fourPlayers)
+        XCTAssertTrue(engine.submit(.rollDice))
+        XCTAssertTrue(engine.submit(.declineProperty))
+        let bidder = engine.players[1]
+        let decision = try await AuctionCoordinator().requestAuctionDecision(engine: engine, bidder: bidder, transport: FixedTransport(reply: "{\"action\":\"bid\",\"amount\":75}"))
+        XCTAssertEqual(decision, .bid(75))
+        XCTAssertEqual(engine.auction?.leadingBidderID, bidder.id)
+        XCTAssertThrowsError(try AuctionProtocol.decision(from: "{\"action\":\"bid\",\"amount\":0}", minimumBid: 76, availableCash: bidder.cash))
     }
 
     func testThreeConsecutiveDoublesSendsPlayerToJail() {
