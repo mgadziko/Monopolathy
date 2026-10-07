@@ -182,6 +182,8 @@ struct ContentView: View {
             Text("MONOPOLATHY").font(.system(size: 17, weight: .bold, design: .rounded))
             Text("\(game.phase.rawValue) • \(game.currentPlayer?.name ?? "—")")
                 .font(.caption).foregroundStyle(.secondary)
+            Text("Bank: \(game.availableHouses) houses • \(game.availableHotels) hotels")
+                .font(.caption2).foregroundStyle(.secondary)
             Divider()
             ForEach(game.players) { player in
                 HStack(spacing: 6) {

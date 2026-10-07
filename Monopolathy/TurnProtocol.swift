@@ -376,6 +376,8 @@ struct AssetSnapshot: Codable, Equatable {
     let buildings: [Int: Int]
     let buildableProperties: [Int]
     let sellableProperties: [Int]
+    let availableHouses: Int
+    let availableHotels: Int
 
     @MainActor init(engine: GameEngine, player: Player) {
         playerName = player.name
@@ -386,6 +388,8 @@ struct AssetSnapshot: Codable, Equatable {
         buildings = Dictionary(uniqueKeysWithValues: player.properties.map { ($0, engine.buildingsBySpaceID[$0, default: 0]) })
         buildableProperties = player.properties.filter { engine.canBuild(on: $0, by: player.id) }.sorted()
         sellableProperties = player.properties.filter { engine.canSellBuilding(on: $0, by: player.id) }.sorted()
+        availableHouses = engine.availableHouses
+        availableHotels = engine.availableHotels
     }
 }
 
