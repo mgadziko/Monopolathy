@@ -10,6 +10,7 @@ struct ContentView: View {
     ]
     @State private var availability = Dictionary(uniqueKeysWithValues: PlayerEndpoint.allCases.map { ($0, PlayerAvailability.checking) })
     @State private var isAskingPlayer = false
+    @State private var isAutoPlaying = false
     @State private var playerTurnStatus: String?
 
     private var activeEndpoints: [PlayerEndpoint] {
@@ -81,7 +82,10 @@ struct ContentView: View {
                 Text("Only live, configured player services appear in the four menus. The game will validate every proposed move.")
                     .foregroundStyle(.secondary)
                 Spacer()
-                Button { game.start(endpoints: slots.compactMap(\.endpoint)) } label: { Label("Start Game", systemImage: "play.fill") }
+                Button {
+                    game.start(endpoints: slots.compactMap(\.endpoint))
+                    beginAutomaticPlay()
+                } label: { Label("Start Game", systemImage: "play.fill") }
                     .buttonStyle(.borderedProminent).disabled(!canStart)
             }
         }
@@ -120,13 +124,22 @@ struct ContentView: View {
                 }
                 Spacer()
                 Button {
-                    Task { await askCurrentPlayer() }
+                    Task { _ = await askCurrentPlayer() }
                 } label: {
                     Label(isAskingPlayer ? "Waiting for Player…" : "Ask Current Player", systemImage: "person.crop.circle.badge.play")
                 }
                 .buttonStyle(.borderedProminent)
+                .disabled(isAskingPlayer || isAutoPlaying || game.phase == .auction || game.phase == .trading || game.phase == .gameOver)
+                Button {
+                    if isAutoPlaying { isAutoPlaying = false } else { beginAutomaticPlay() }
+                } label: {
+                    Label(isAutoPlaying ? "Stop Automatic Play" : "Resume Automatic Play", systemImage: isAutoPlaying ? "stop.fill" : "play.fill")
+                }
                 .disabled(isAskingPlayer || game.phase == .auction || game.phase == .trading || game.phase == .gameOver)
-                Button("New Game") { game.returnToLobby() }
+                Button("New Game") {
+                    isAutoPlaying = false
+                    game.returnToLobby()
+                }
             }
         }.padding(28)
     }
@@ -145,11 +158,11 @@ struct ContentView: View {
         }
     }
 
-    @MainActor private func askCurrentPlayer() async {
-        guard let player = game.currentPlayer else { return }
+    @MainActor private func askCurrentPlayer() async -> Bool {
+        guard let player = game.currentPlayer else { return false }
         guard player.endpoint.hermesProfileName != nil else {
             playerTurnStatus = "ChatGPT connection is not configured yet."
-            return
+            return false
         }
         isAskingPlayer = true
         playerTurnStatus = "Waiting for \(player.name)'s legal move…"
@@ -157,8 +170,36 @@ struct ContentView: View {
         do {
             let action = try await TurnCoordinator().playTurn(engine: game, transport: HermesTurnTransport(endpoint: player.endpoint))
             playerTurnStatus = "\(player.name) chose \(actionTitle(action))."
+            return true
         } catch {
             playerTurnStatus = error.localizedDescription
+            return false
+        }
+    }
+
+    @MainActor private func beginAutomaticPlay() {
+        guard !isAutoPlaying, game.phase != .auction, game.phase != .trading, game.phase != .gameOver else { return }
+        isAutoPlaying = true
+        Task { await playAutomatically() }
+    }
+
+    /// Every model still receives only one validated decision at a time. There
+    /// is intentionally no delay: a player may immediately take a further
+    /// roll after doubles, as standard Monopoly permits.
+    @MainActor private func playAutomatically() async {
+        defer { isAutoPlaying = false }
+        var decisions = 0
+        while isAutoPlaying, !Task.isCancelled, decisions < 10_000 {
+            guard game.phase != .auction, game.phase != .trading, game.phase != .gameOver else { break }
+            guard await askCurrentPlayer() else { break }
+            decisions += 1
+        }
+        if game.phase == .auction {
+            playerTurnStatus = "Automatic play paused for an auction; bidding protocol is next."
+        } else if game.phase == .trading {
+            playerTurnStatus = "Automatic play paused for a trade."
+        } else if decisions == 10_000 {
+            playerTurnStatus = "Automatic play stopped after 10,000 decisions."
         }
     }
 }

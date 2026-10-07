@@ -32,14 +32,16 @@ the app, rather than any model, is the authoritative rules engine.
 - A narrow Hermes turn transport reads the selected profile's configured model
   endpoint and sends it only the current JSON turn prompt. It cannot use
   Hermes tools, terminals, memories, or alter the rules engine directly.
-- At the table, **Ask Current Player** makes one live, validated decision for
-  the active Hermes player. This deliberately pauses for auctions and trades
-  until their multi-player proposal protocol is complete.
+- Starting a game begins unthrottled automatic play: each active Hermes player
+  receives one strict turn request at a time and the next request is made as
+  soon as its legal action resolves. **Stop Automatic Play** and **Ask Current
+  Player** remain available controls. Automatic play deliberately pauses for
+  auctions and trades until their multi-player proposal protocols are complete.
 - No built-in AI strategy and no ChatGPT connection yet.
 
 The remaining work is a user-authorized ChatGPT sign-in flow, auction/trade
-proposal protocols, continuous play controls, and final rule-edge-case
-auditing. No endpoint will receive general tool access.
+proposal protocols, and final rule-edge-case auditing. No endpoint will
+receive general tool access.
 
 ## Build and test
 
