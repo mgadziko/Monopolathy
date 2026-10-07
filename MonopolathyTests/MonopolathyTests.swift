@@ -177,6 +177,25 @@ final class MonopolathyTests: XCTestCase {
         XCTAssertThrowsError(try AuctionProtocol.decision(from: "{\"action\":\"bid\",\"amount\":0}", minimumBid: 76, availableCash: bidder.cash))
     }
 
+    func testTradeCoordinatorExecutesOnlyAcceptedValidatedOffer() async throws {
+        let engine = GameEngine()
+        engine.start(endpoints: fourPlayers)
+        let proposer = engine.players[0]
+        let recipient = engine.players[1]
+        engine.grantPropertiesForTesting([1], to: proposer.id)
+        let proposal = "{\"action\":\"propose_trade\",\"to_player_id\":\"\(recipient.id.uuidString)\",\"give_cash\":0,\"request_cash\":100,\"give_properties\":[1],\"request_properties\":[]}"
+        let result = try await TradeCoordinator().negotiate(
+            engine: engine,
+            proposer: proposer,
+            proposerTransport: FixedTransport(reply: proposal),
+            recipientTransport: { _ in FixedTransport(reply: "{\"action\":\"accept\"}") }
+        )
+        XCTAssertEqual(result, .completed)
+        XCTAssertTrue(engine.players[1].properties.contains(1))
+        XCTAssertEqual(engine.players[0].cash, 1_600)
+        XCTAssertEqual(engine.players[1].cash, 1_400)
+    }
+
     func testThreeConsecutiveDoublesSendsPlayerToJail() {
         let sequence = RollSequence([(1, 1), (1, 1), (1, 1)])
         let cards = [MonopolyCard(id: "test-chest", deck: .communityChest, effect: .collect(0))]

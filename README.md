@@ -26,6 +26,8 @@ the app, rather than any model, is the authoritative rules engine.
   and selling enforcement, finite bank inventory, and mortgage restrictions.
 - Validated cash/property trades, including the immediate interest required on
   transferred mortgaged property, and creditor/bank bankruptcy asset handling.
+  Once per turn, a player may make one exact offer; its recipient separately
+  accepts or declines that validated offer.
 - A strict, JSON-only turn-proposal protocol: endpoints receive a table
   snapshot and their current legal actions; malformed or illegal proposals are
   rejected before they can touch game state.
@@ -39,13 +41,12 @@ the app, rather than any model, is the authoritative rules engine.
   soon as its legal action resolves. **Stop Automatic Play** and **Ask Current
   Player** remain available controls. Auctions use a separate strict `bid` or
   `pass` JSON proposal per eligible player, and therefore continue
-  automatically. Play pauses for trades until their multi-player protocol is
-  complete.
+  automatically. The optional trade window uses a separate proposal followed
+  by an exact-offer acceptance, so automatic play continues afterward.
 - No built-in AI strategy and no ChatGPT connection yet.
 
-The remaining work is a user-authorized ChatGPT sign-in flow, a trade proposal
-protocol, and final rule-edge-case auditing. No endpoint will receive general
-tool access.
+The remaining work is a user-authorized ChatGPT sign-in flow and final
+rule-edge-case auditing. No endpoint will receive general tool access.
 
 ## Build and test
 

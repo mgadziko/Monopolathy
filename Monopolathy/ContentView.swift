@@ -11,6 +11,7 @@ struct ContentView: View {
     @State private var availability = Dictionary(uniqueKeysWithValues: PlayerEndpoint.allCases.map { ($0, PlayerAvailability.checking) })
     @State private var isAskingPlayer = false
     @State private var isAutoPlaying = false
+    @State private var tradeWindowPlayerID: UUID?
     @State private var playerTurnStatus: String?
 
     private var activeEndpoints: [PlayerEndpoint] {
@@ -84,6 +85,7 @@ struct ContentView: View {
                 Spacer()
                 Button {
                     game.start(endpoints: slots.compactMap(\.endpoint))
+                    tradeWindowPlayerID = nil
                     beginAutomaticPlay()
                 } label: { Label("Start Game", systemImage: "play.fill") }
                     .buttonStyle(.borderedProminent).disabled(!canStart)
@@ -138,6 +140,7 @@ struct ContentView: View {
                 .disabled(isAskingPlayer || game.phase == .trading || game.phase == .gameOver)
                 Button("New Game") {
                     isAutoPlaying = false
+                    tradeWindowPlayerID = nil
                     game.returnToLobby()
                 }
             }
@@ -194,6 +197,7 @@ struct ContentView: View {
                 guard await askNextAuctionBidder() else { break }
             } else {
                 guard game.phase != .trading, game.phase != .gameOver else { break }
+                guard await negotiateTradeIfNeeded() else { break }
                 guard await askCurrentPlayer() else { break }
             }
             decisions += 1
@@ -225,6 +229,36 @@ struct ContentView: View {
             switch decision {
             case let .bid(amount): playerTurnStatus = "\(bidder.name) bid $\(amount)."
             case .pass: playerTurnStatus = "\(bidder.name) passed."
+            }
+            return true
+        } catch {
+            playerTurnStatus = error.localizedDescription
+            return false
+        }
+    }
+
+    @MainActor private func negotiateTradeIfNeeded() async -> Bool {
+        guard let proposer = game.currentPlayer else { return false }
+        guard tradeWindowPlayerID != proposer.id else { return true }
+        tradeWindowPlayerID = proposer.id
+        guard proposer.endpoint.hermesProfileName != nil else {
+            playerTurnStatus = "ChatGPT connection is not configured yet."
+            return false
+        }
+        isAskingPlayer = true
+        playerTurnStatus = "Waiting for \(proposer.name)'s trade decision…"
+        defer { isAskingPlayer = false }
+        do {
+            let result = try await TradeCoordinator().negotiate(
+                engine: game,
+                proposer: proposer,
+                proposerTransport: HermesTurnTransport(endpoint: proposer.endpoint),
+                recipientTransport: { HermesTurnTransport(endpoint: $0) }
+            )
+            switch result {
+            case .noOffer: playerTurnStatus = "\(proposer.name) made no trade offer."
+            case .declined: playerTurnStatus = "\(proposer.name)'s trade offer was declined."
+            case .completed: playerTurnStatus = "\(proposer.name)'s trade was completed."
             }
             return true
         } catch {

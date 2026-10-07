@@ -217,6 +217,156 @@ final class AuctionCoordinator {
     }
 }
 
+struct TradeSnapshot: Codable, Equatable {
+    struct PlayerState: Codable, Equatable {
+        let id: UUID
+        let name: String
+        let cash: Int
+        let properties: [Int]
+    }
+
+    let proposerID: UUID
+    let proposerName: String
+    let players: [PlayerState]
+    let propertyNames: [Int: String]
+
+    @MainActor init(engine: GameEngine, proposer: Player) {
+        proposerID = proposer.id
+        proposerName = proposer.name
+        players = engine.players.filter { !$0.bankrupt }.map { .init(id: $0.id, name: $0.name, cash: $0.cash, properties: $0.properties.sorted()) }
+        propertyNames = Dictionary(uniqueKeysWithValues: engine.board.filter(\.isPurchasable).map { ($0.id, $0.name) })
+    }
+}
+
+enum TradeNegotiation: Equatable {
+    case noOffer
+    case declined
+    case completed
+}
+
+private struct ProposedTradeAction: Decodable {
+    let action: String
+    let toPlayerID: UUID?
+    let giveCash: Int?
+    let requestCash: Int?
+    let giveProperties: [Int]?
+    let requestProperties: [Int]?
+
+    enum CodingKeys: String, CodingKey {
+        case action
+        case toPlayerID = "to_player_id"
+        case giveCash = "give_cash"
+        case requestCash = "request_cash"
+        case giveProperties = "give_properties"
+        case requestProperties = "request_properties"
+    }
+}
+
+private struct ProposedTradeResponse: Decodable { let action: String }
+
+enum TradeProtocolError: LocalizedError, Equatable {
+    case malformedReply
+    case illegalProposal(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .malformedReply: "The trade response was not a valid JSON object."
+        case let .illegalProposal(reason): "The trade proposal is not legal: \(reason)."
+        }
+    }
+}
+
+enum TradeProtocol {
+    static func proposalPrompt(for snapshot: TradeSnapshot) -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let state = String(data: (try? encoder.encode(snapshot)) ?? Data(), encoding: .utf8) ?? "{}"
+        return """
+        You are \(snapshot.proposerName), playing standard-rules Monopoly. Before your turn, you may make exactly one voluntary trade offer, or make no offer. Strategy is entirely yours. The game will validate ownership, cash, unimproved properties, and mortgage-transfer costs.
+
+        Table state JSON:
+        \(state)
+
+        Reply with exactly one JSON object and no Markdown or explanation:
+        {"action":"no_trade"}
+        or
+        {"action":"propose_trade","to_player_id":"UUID from table state","give_cash":0,"request_cash":0,"give_properties":[property_ids],"request_properties":[property_ids]}
+        """
+    }
+
+    @MainActor static func responsePrompt(for offer: TradeOffer, engine: GameEngine) -> String {
+        let propertyNames = Dictionary(uniqueKeysWithValues: engine.board.filter(\.isPurchasable).map { ($0.id, $0.name) })
+        let offered = offer.fromProperties.sorted().map { propertyNames[$0] ?? "#\($0)" }.joined(separator: ", ")
+        let requested = offer.toProperties.sorted().map { propertyNames[$0] ?? "#\($0)" }.joined(separator: ", ")
+        let proposer = engine.players.first(where: { $0.id == offer.fromPlayerID })?.name ?? "Opponent"
+        return """
+        You are considering a standard-rules Monopoly trade offered by \(proposer).
+        You receive: $\(offer.fromCash), properties [\(offered)].
+        You give: $\(offer.toCash), properties [\(requested)].
+        Decide strategy yourself. The game validates the offer; you can only accept this exact offer or decline it.
+
+        Reply with exactly one JSON object and no Markdown or explanation:
+        {"action":"accept"}
+        or
+        {"action":"decline"}
+        """
+    }
+
+    @MainActor static func offer(from reply: String, proposer: Player, engine: GameEngine) throws -> TradeOffer? {
+        guard let proposal = try? JSONDecoder().decode(ProposedTradeAction.self, from: Data(reply.trimmingCharacters(in: .whitespacesAndNewlines).utf8)) else { throw TradeProtocolError.malformedReply }
+        guard proposal.action == "no_trade" || proposal.action == "propose_trade" else { throw TradeProtocolError.illegalProposal(proposal.action) }
+        guard proposal.action == "propose_trade" else { return nil }
+        guard let recipientID = proposal.toPlayerID, recipientID != proposer.id,
+              let giveCash = proposal.giveCash, let requestCash = proposal.requestCash,
+              let giveProperties = proposal.giveProperties, let requestProperties = proposal.requestProperties,
+              giveCash >= 0, requestCash >= 0,
+              Set(giveProperties).count == giveProperties.count, Set(requestProperties).count == requestProperties.count else {
+            throw TradeProtocolError.illegalProposal("invalid trade fields")
+        }
+        let offer = TradeOffer(fromPlayerID: proposer.id, toPlayerID: recipientID, fromCash: giveCash, toCash: requestCash, fromProperties: Set(giveProperties), toProperties: Set(requestProperties))
+        guard engine.canExecuteTrade(offer) else { throw TradeProtocolError.illegalProposal("engine validation failed") }
+        return offer
+    }
+
+    static func accepted(from reply: String) throws -> Bool {
+        guard let response = try? JSONDecoder().decode(ProposedTradeResponse.self, from: Data(reply.trimmingCharacters(in: .whitespacesAndNewlines).utf8)) else { throw TradeProtocolError.malformedReply }
+        switch response.action {
+        case "accept": return true
+        case "decline": return false
+        default: throw TradeProtocolError.illegalProposal(response.action)
+        }
+    }
+}
+
+enum TradeCoordinatorError: LocalizedError {
+    case proposalRejected(TradeProtocolError)
+    case engineRejected
+
+    var errorDescription: String? {
+        switch self {
+        case let .proposalRejected(error): error.errorDescription
+        case .engineRejected: "The engine rejected an otherwise validated trade."
+        }
+    }
+}
+
+@MainActor
+final class TradeCoordinator {
+    func negotiate(engine: GameEngine, proposer: Player, proposerTransport: any PlayerTurnTransport, recipientTransport: (PlayerEndpoint) -> any PlayerTurnTransport) async throws -> TradeNegotiation {
+        let reply = try await proposerTransport.respond(to: TradeProtocol.proposalPrompt(for: TradeSnapshot(engine: engine, proposer: proposer)))
+        do {
+            guard let offer = try TradeProtocol.offer(from: reply, proposer: proposer, engine: engine) else { return .noOffer }
+            guard let recipient = engine.players.first(where: { $0.id == offer.toPlayerID }) else { throw TradeCoordinatorError.engineRejected }
+            let recipientReply = try await recipientTransport(recipient.endpoint).respond(to: TradeProtocol.responsePrompt(for: offer, engine: engine))
+            guard try TradeProtocol.accepted(from: recipientReply) else { return .declined }
+            guard engine.executeTrade(offer) else { throw TradeCoordinatorError.engineRejected }
+            return .completed
+        } catch let error as TradeProtocolError {
+            throw TradeCoordinatorError.proposalRejected(error)
+        }
+    }
+}
+
 enum HermesTurnTransportError: LocalizedError {
     case profileUnavailable
     case invalidResponse
