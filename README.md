@@ -30,6 +30,8 @@ the app, rather than any model, is the authoritative rules engine.
   transferred mortgaged property, and creditor/bank bankruptcy asset handling.
   Once per turn, a player may make one exact offer; its recipient separately
   accepts or declines that validated offer.
+- Bankruptcy removes the player from turn rotation; the engine records a
+  game-over winner when only one solvent player remains.
 - A strict, JSON-only turn-proposal protocol: endpoints receive a table
   snapshot and their current legal actions; malformed or illegal proposals are
   rejected before they can touch game state.

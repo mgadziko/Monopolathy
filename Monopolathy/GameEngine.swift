@@ -449,8 +449,29 @@ final class GameEngine: ObservableObject {
         }
     }
 
-    private func beginExtraRoll() { phase = .awaitingRoll; append("\(currentPlayer?.name ?? "Player") rolls again.") }
-    private func endTurn() { guard !players.isEmpty else { return }; doublesThisTurn = 0; currentPlayerIndex = (currentPlayerIndex + 1) % players.count; phase = .awaitingRoll; pendingAction = .none }
+    private func beginExtraRoll() {
+        guard currentPlayer?.bankrupt != true else { endTurn(); return }
+        phase = .awaitingRoll
+        append("\(currentPlayer?.name ?? "Player") rolls again.")
+    }
+
+    private func endTurn() {
+        let activeIndices = players.indices.filter { !players[$0].bankrupt }
+        guard let winnerIndex = activeIndices.first else { return }
+        doublesThisTurn = 0
+        pendingAction = .none
+        guard activeIndices.count > 1 else {
+            currentPlayerIndex = winnerIndex
+            phase = .gameOver
+            pendingAction = .gameOver(winner: players[winnerIndex].id)
+            append("\(players[winnerIndex].name) wins the game.")
+            return
+        }
+        var nextIndex = currentPlayerIndex
+        repeat { nextIndex = (nextIndex + 1) % players.count } while players[nextIndex].bankrupt
+        currentPlayerIndex = nextIndex
+        phase = .awaitingRoll
+    }
     private func charge(playerID: UUID, amount: Int, reason: String) { guard let index = players.firstIndex(where: { $0.id == playerID }) else { return }; players[index].cash -= amount; append("\(players[index].name) paid $\(amount) for \(reason)."); resolveBankruptcyIfNeeded(playerID: playerID, creditorID: nil) }
     private func transfer(amount: Int, from payerID: UUID, to ownerID: UUID) { guard let payer = players.firstIndex(where: { $0.id == payerID }), let owner = players.firstIndex(where: { $0.id == ownerID }) else { return }; players[payer].cash -= amount; players[owner].cash += amount; append("\(players[payer].name) paid \(players[owner].name) $\(amount) rent."); resolveBankruptcyIfNeeded(playerID: payerID, creditorID: ownerID) }
     private func rentFor(space: BoardSpace, ownerID: UUID) -> Int { switch space.kind { case .railroad: let count = player(withID: ownerID)?.properties.filter { board[$0].kind == .railroad }.count ?? 0; return [25, 50, 100, 200][max(0, min(count - 1, 3))]; case .utility: let count = player(withID: ownerID)?.properties.filter { board[$0].kind == .utility }.count ?? 0; return (count == 2 ? 10 : 4) * ((lastRoll?.0 ?? 0) + (lastRoll?.1 ?? 0)); case .property: let set = StandardRules.colorSet(for: space.id); let ownsSet = set.isSubset(of: player(withID: ownerID)?.properties ?? []); return StandardRules.baseRent(spaceID: space.id, buildings: buildingsBySpaceID[space.id, default: 0], ownsColorSet: ownsSet); default: return space.rent } }
@@ -490,6 +511,11 @@ final class GameEngine: ObservableObject {
         guard let index = players.firstIndex(where: { $0.id == playerID }) else { return }
         currentPlayerIndex = index
         phase = .awaitingRoll
+    }
+    func bankruptForTesting(_ playerID: UUID) {
+        guard let index = players.firstIndex(where: { $0.id == playerID }) else { return }
+        players[index].cash = -1
+        resolveBankruptcyIfNeeded(playerID: playerID, creditorID: nil)
     }
     #endif
 }

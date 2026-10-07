@@ -178,6 +178,20 @@ final class MonopolathyTests: XCTestCase {
         XCTAssertEqual(engine.players[0].cash, 0)
         XCTAssertEqual(engine.players[1].cash, 1_550)
         XCTAssertEqual(creditor.id, engine.players[1].id)
+        XCTAssertEqual(engine.currentPlayerIndex, 1)
+    }
+
+    func testFinalSolventPlayerWinsAndBankruptSeatsAreSkipped() {
+        let engine = GameEngine(dice: { (1, 2) })
+        engine.start(endpoints: fourPlayers)
+        let winner = engine.players[0]
+        engine.grantPropertiesForTesting([3], to: winner.id)
+        for player in engine.players.dropFirst() { engine.bankruptForTesting(player.id) }
+        XCTAssertTrue(engine.submit(.rollDice))
+        XCTAssertEqual(engine.phase, .gameOver)
+        XCTAssertEqual(engine.currentPlayer?.id, winner.id)
+        guard case let .gameOver(winnerID) = engine.pendingAction else { return XCTFail("Expected game-over state") }
+        XCTAssertEqual(winnerID, winner.id)
     }
 
     func testTurnProtocolAcceptsOnlyCurrentLegalJSONAction() throws {
