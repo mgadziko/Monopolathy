@@ -22,6 +22,9 @@ final class GameEngine: ObservableObject {
     private var pendingExtraRoll = false
     private var chanceCards: [MonopolyCard] = []
     private var communityChestCards: [MonopolyCard] = []
+    /// Properties returned to the Bank by a bankruptcy must be auctioned one
+    /// at a time before normal turn flow may resume.
+    private var bankruptcyAuctionQueue: [Int] = []
 
     private enum CardRentModifier {
         case normal
@@ -85,6 +88,7 @@ final class GameEngine: ObservableObject {
         buildingsBySpaceID = [:]
         mortgagedSpaceIDs = []
         auction = nil
+        bankruptcyAuctionQueue = []
         chanceCards = (deckOrder ?? MonopolyCard.standardDeck).filter { $0.deck == .chance }
         communityChestCards = (deckOrder ?? MonopolyCard.standardDeck).filter { $0.deck == .communityChest }
         if deckOrder == nil { chanceCards.shuffle(); communityChestCards.shuffle() }
@@ -102,6 +106,7 @@ final class GameEngine: ObservableObject {
         buildingsBySpaceID = [:]
         mortgagedSpaceIDs = []
         auction = nil
+        bankruptcyAuctionQueue = []
         log = []
     }
 
@@ -240,8 +245,13 @@ final class GameEngine: ObservableObject {
                 append("\(players[index].name) won \(board[auction.spaceID].name) for $\(auction.leadingBid).")
             } else { append("No bids for \(board[auction.spaceID].name).") }
             self.auction = nil
-            pendingExtraRoll ? beginExtraRoll() : endTurn()
-            pendingExtraRoll = false
+            if !bankruptcyAuctionQueue.isEmpty {
+                bankruptcyAuctionQueue.removeFirst()
+                beginNextBankruptcyAuction()
+            } else {
+                pendingExtraRoll ? beginExtraRoll() : endTurn()
+                pendingExtraRoll = false
+            }
         } else { self.auction = auction }
         return true
     }
@@ -470,6 +480,13 @@ final class GameEngine: ObservableObject {
     }
 
     private func endTurn() {
+        // A bankruptcy may have opened a mandatory Bank auction while the
+        // previous landing was resolving. Keep that auction in control.
+        guard auction == nil else { return }
+        if !bankruptcyAuctionQueue.isEmpty {
+            beginNextBankruptcyAuction()
+            return
+        }
         let activeIndices = players.indices.filter { !players[$0].bankrupt }
         guard let winnerIndex = activeIndices.first else { return }
         doublesThisTurn = 0
@@ -539,8 +556,17 @@ final class GameEngine: ObservableObject {
         } else {
             mortgagedSpaceIDs.subtract(properties)
             append("\(players[debtorIndex].name) went bankrupt; properties returned to the bank.")
+            bankruptcyAuctionQueue = properties.sorted()
+            beginNextBankruptcyAuction()
         }
         jailCardDecks.forEach { returnGetOutOfJailFreeCard(to: $0) }
+    }
+
+    private func beginNextBankruptcyAuction() {
+        guard let spaceID = bankruptcyAuctionQueue.first else { return }
+        auction = AuctionState(spaceID: spaceID, excludedPlayerID: nil, leadingBidderID: nil, leadingBid: 0, passedPlayerIDs: [])
+        phase = .auction
+        append("Bank auction opened for \(board[spaceID].name).")
     }
 
     #if DEBUG

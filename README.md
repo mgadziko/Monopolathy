@@ -35,6 +35,9 @@ the app, rather than any model, is the authoritative rules engine.
   transferred mortgaged property, and creditor/bank bankruptcy asset handling.
   A creditor inheriting a mortgaged property through bankruptcy likewise pays
   the standard immediate 10% mortgage interest to the Bank.
+- If a player owes the Bank and goes bankrupt, their returned properties are
+  automatically auctioned to the remaining players before normal turn flow
+  resumes; a mortgage on a returned property is cleared by its return.
   Once per turn, a player may make one exact offer; its recipient separately
   accepts or declines that validated offer.
 - Bankruptcy removes the player from turn rotation; the engine records a

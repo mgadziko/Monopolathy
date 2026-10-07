@@ -227,6 +227,29 @@ final class MonopolathyTests: XCTestCase {
         XCTAssertEqual(creditor.id, engine.players[1].id)
     }
 
+    func testBankruptcyToBankAuctionsReturnedProperties() {
+        let cards = [MonopolyCard(id: "test-bank-payment", deck: .chance, effect: .payBank(50))]
+        let engine = GameEngine(dice: { (3, 4) }, deckOrder: cards)
+        engine.start(endpoints: fourPlayers)
+        let debtor = engine.players[0]
+        let bidder = engine.players[1]
+        engine.grantPropertiesForTesting([1], to: debtor.id)
+        engine.setCashForTesting(10, for: debtor.id)
+
+        XCTAssertTrue(engine.submit(.rollDice))
+        XCTAssertTrue(engine.players[0].bankrupt)
+        XCTAssertEqual(engine.phase, .auction)
+        XCTAssertEqual(engine.auction?.spaceID, 1)
+        XCTAssertTrue(engine.placeAuctionBid(20, by: bidder.id))
+        XCTAssertTrue(engine.passAuction(by: engine.players[2].id))
+        XCTAssertTrue(engine.passAuction(by: engine.players[3].id))
+
+        XCTAssertTrue(engine.players[1].properties.contains(1))
+        XCTAssertEqual(engine.players[1].cash, 1_480)
+        XCTAssertEqual(engine.phase, .awaitingRoll)
+        XCTAssertEqual(engine.currentPlayer?.id, bidder.id)
+    }
+
     func testFinalSolventPlayerWinsAndBankruptSeatsAreSkipped() {
         let engine = GameEngine(dice: { (1, 2) })
         engine.start(endpoints: fourPlayers)
