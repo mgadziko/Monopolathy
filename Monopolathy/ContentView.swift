@@ -107,17 +107,21 @@ struct ContentView: View {
                 if let roll = game.lastRoll { Text("Last roll: \(roll.0) + \(roll.1)").monospacedDigit() }
             }
             HStack(alignment: .top, spacing: 20) {
+                board
+                    .frame(minWidth: 560, maxWidth: .infinity)
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Players").font(.headline)
                     ForEach(game.players) { player in
-                        Text("\(player.token)  \(player.name): $\(player.cash) • space \(player.position)")
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("\(player.token)  \(player.name): $\(player.cash)")
+                            Text(game.board[player.position].name)
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
                     }
-                }.frame(width: 330, alignment: .leading)
-                Divider()
-                VStack(alignment: .leading, spacing: 10) {
                     Text("Table log").font(.headline)
                     ScrollView { LazyVStack(alignment: .leading, spacing: 6) { ForEach(game.log) { Text($0.text).font(.callout) } } }
-                }.frame(maxWidth: .infinity, minHeight: 400, alignment: .topLeading)
+                        .frame(minHeight: 250)
+                }.frame(width: 340, alignment: .leading)
             }
             if let playerTurnStatus {
                 Text(playerTurnStatus).foregroundStyle(.secondary)
@@ -148,6 +152,84 @@ struct ContentView: View {
                 }
             }
         }.padding(28)
+    }
+
+    private var board: some View {
+        Grid(horizontalSpacing: 1, verticalSpacing: 1) {
+            ForEach(0..<11, id: \.self) { row in
+                GridRow {
+                    ForEach(0..<11, id: \.self) { column in
+                        if let spaceID = boardSpaceID(row: row, column: column) {
+                            boardSpace(spaceID)
+                        } else if row == 5 && column == 5 {
+                            VStack(spacing: 4) {
+                                Text("MONOPOLATHY").font(.system(size: 14, weight: .bold, design: .rounded))
+                                Text(game.phase.rawValue.uppercased()).font(.caption2).foregroundStyle(.secondary)
+                            }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .background(.thinMaterial)
+                        } else {
+                            Color.clear.frame(maxWidth: .infinity, maxHeight: .infinity)
+                        }
+                    }
+                }
+            }
+        }
+        .aspectRatio(1, contentMode: .fit)
+        .padding(4)
+        .background(Color(nsColor: .windowBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(.secondary.opacity(0.35)))
+    }
+
+    @ViewBuilder private func boardSpace(_ spaceID: Int) -> some View {
+        let space = game.board[spaceID]
+        ZStack(alignment: .top) {
+            Rectangle().fill(boardColor(for: spaceID).opacity(0.18))
+            VStack(spacing: 2) {
+                Rectangle().fill(boardColor(for: spaceID)).frame(height: 5)
+                Text(space.name).font(.system(size: 8, weight: .medium)).lineLimit(2).minimumScaleFactor(0.55)
+                    .multilineTextAlignment(.center).padding(.horizontal, 2)
+                Spacer(minLength: 0)
+                HStack(spacing: 2) {
+                    ForEach(game.players.filter { !$0.bankrupt && $0.position == spaceID }) { player in
+                        Circle().fill(tokenColor(for: player.id)).frame(width: 8, height: 8)
+                            .overlay(Circle().stroke(.white, lineWidth: 0.8))
+                    }
+                }.padding(.bottom, 2)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .overlay(Rectangle().stroke(.secondary.opacity(0.3), lineWidth: 0.5))
+    }
+
+    private func boardSpaceID(row: Int, column: Int) -> Int? {
+        if row == 10 { return 10 - column }
+        if column == 0, row < 10 { return 20 - row }
+        if row == 0, column > 0 { return 20 + column }
+        if column == 10, row > 0, row < 10 { return 30 + row }
+        return nil
+    }
+
+    private func boardColor(for spaceID: Int) -> Color {
+        switch spaceID {
+        case 1, 3: .brown
+        case 6, 8, 9: .cyan
+        case 11, 13, 14: .pink
+        case 16, 18, 19: .orange
+        case 21, 23, 24: .red
+        case 26, 27, 29: .yellow
+        case 31, 32, 34: .green
+        case 37, 39: .blue
+        case 5, 15, 25, 35: .black
+        case 12, 28: .purple
+        default: .gray
+        }
+    }
+
+    private func tokenColor(for playerID: UUID) -> Color {
+        let index = game.players.firstIndex(where: { $0.id == playerID }) ?? 0
+        return [.red, .blue, .green, .orange][index % 4]
     }
 
     private func actionTitle(_ action: GameAction) -> String {
