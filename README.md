@@ -23,7 +23,7 @@ the app, rather than any model, is the authoritative rules engine.
 - A held Get Out of Jail Free card is removed from its originating deck and is
   returned only when used or when its holder leaves the game.
 - Validated auction state for declined properties, plus mortgage state that
-  pays half the purchase price and blocks invalid repeat mortgages. Auctions
+  pays half the purchase price, suppresses rent, and blocks invalid repeat mortgages. Auctions
   follow the standard rule that the player who declined the property may still
   bid.
 - Full-set, unmortgaged-only house and hotel construction with even-building

@@ -134,6 +134,17 @@ final class MonopolathyTests: XCTestCase {
         XCTAssertFalse(engine.mortgage(spaceID: 6, by: owner.id))
     }
 
+    func testMortgagedPropertyDoesNotCollectRent() {
+        let engine = GameEngine(dice: { (3, 3) })
+        engine.start(endpoints: fourPlayers)
+        let owner = engine.players[1]
+        engine.grantPropertiesForTesting([6], to: owner.id)
+        XCTAssertTrue(engine.mortgage(spaceID: 6, by: owner.id))
+        XCTAssertTrue(engine.submit(.rollDice))
+        XCTAssertEqual(engine.players[0].cash, 1_500)
+        XCTAssertEqual(engine.players[1].cash, 1_550)
+    }
+
     func testBuildingsRequireACompleteSetAndFollowEvenBuilding() {
         let engine = GameEngine()
         engine.start(endpoints: fourPlayers)

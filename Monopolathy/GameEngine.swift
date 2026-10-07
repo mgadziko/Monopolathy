@@ -488,7 +488,22 @@ final class GameEngine: ObservableObject {
     }
     private func charge(playerID: UUID, amount: Int, reason: String) { guard let index = players.firstIndex(where: { $0.id == playerID }) else { return }; players[index].cash -= amount; append("\(players[index].name) paid $\(amount) for \(reason)."); resolveBankruptcyIfNeeded(playerID: playerID, creditorID: nil) }
     private func transfer(amount: Int, from payerID: UUID, to ownerID: UUID) { guard let payer = players.firstIndex(where: { $0.id == payerID }), let owner = players.firstIndex(where: { $0.id == ownerID }) else { return }; players[payer].cash -= amount; players[owner].cash += amount; append("\(players[payer].name) paid \(players[owner].name) $\(amount) rent."); resolveBankruptcyIfNeeded(playerID: payerID, creditorID: ownerID) }
-    private func rentFor(space: BoardSpace, ownerID: UUID) -> Int { switch space.kind { case .railroad: let count = player(withID: ownerID)?.properties.filter { board[$0].kind == .railroad }.count ?? 0; return [25, 50, 100, 200][max(0, min(count - 1, 3))]; case .utility: let count = player(withID: ownerID)?.properties.filter { board[$0].kind == .utility }.count ?? 0; return (count == 2 ? 10 : 4) * ((lastRoll?.0 ?? 0) + (lastRoll?.1 ?? 0)); case .property: let set = StandardRules.colorSet(for: space.id); let ownsSet = set.isSubset(of: player(withID: ownerID)?.properties ?? []); return StandardRules.baseRent(spaceID: space.id, buildings: buildingsBySpaceID[space.id, default: 0], ownsColorSet: ownsSet); default: return space.rent } }
+    private func rentFor(space: BoardSpace, ownerID: UUID) -> Int {
+        guard !mortgagedSpaceIDs.contains(space.id) else { return 0 }
+        switch space.kind {
+        case .railroad:
+            let count = player(withID: ownerID)?.properties.filter { board[$0].kind == .railroad }.count ?? 0
+            return [25, 50, 100, 200][max(0, min(count - 1, 3))]
+        case .utility:
+            let count = player(withID: ownerID)?.properties.filter { board[$0].kind == .utility }.count ?? 0
+            return (count == 2 ? 10 : 4) * ((lastRoll?.0 ?? 0) + (lastRoll?.1 ?? 0))
+        case .property:
+            let set = StandardRules.colorSet(for: space.id)
+            let ownsSet = set.isSubset(of: player(withID: ownerID)?.properties ?? [])
+            return StandardRules.baseRent(spaceID: space.id, buildings: buildingsBySpaceID[space.id, default: 0], ownsColorSet: ownsSet)
+        default: return space.rent
+        }
+    }
     private func sendToJail(playerID: UUID, reason: String) { guard var player = player(withID: playerID) else { return }; player.position = 10; player.inJailTurns = 1; update(player); append("\(player.name) went to jail (\(reason)).") }
     private func owner(of spaceID: Int) -> Player? { players.first { $0.properties.contains(spaceID) } }
     private func player(withID id: UUID) -> Player? { players.first { $0.id == id } }
