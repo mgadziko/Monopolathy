@@ -199,21 +199,27 @@ enum AuctionCoordinatorError: LocalizedError {
 @MainActor
 final class AuctionCoordinator {
     func requestAuctionDecision(engine: GameEngine, bidder: Player, transport: any PlayerTurnTransport) async throws -> AuctionDecision {
-        guard let auction = engine.auction else { throw AuctionCoordinatorError.engineRejected }
-        let snapshot = AuctionSnapshot(engine: engine, bidder: bidder)
-        let reply = try await transport.respond(to: AuctionProtocol.prompt(for: snapshot))
-        do {
-            let decision = try AuctionProtocol.decision(from: reply, minimumBid: auction.leadingBid + 1, availableCash: bidder.cash)
-            let applied: Bool
-            switch decision {
-            case let .bid(amount): applied = engine.placeAuctionBid(amount, by: bidder.id)
-            case .pass: applied = engine.passAuction(by: bidder.id)
+        for attempt in 0..<3 {
+            guard let auction = engine.auction else { throw AuctionCoordinatorError.engineRejected }
+            let snapshot = AuctionSnapshot(engine: engine, bidder: bidder)
+            let correction = attempt == 0 ? "" : "Your previous auction reply was invalid. Reply with pass or a bid within the stated range only.\n\n"
+            let reply = try await transport.respond(to: correction + AuctionProtocol.prompt(for: snapshot))
+            do {
+                let decision = try AuctionProtocol.decision(from: reply, minimumBid: auction.leadingBid + 1, availableCash: bidder.cash)
+                let applied: Bool
+                switch decision {
+                case let .bid(amount): applied = engine.placeAuctionBid(amount, by: bidder.id)
+                case .pass: applied = engine.passAuction(by: bidder.id)
+                }
+                guard applied else { throw AuctionCoordinatorError.engineRejected }
+                return decision
+            } catch let error as AuctionProtocolError where attempt == 2 {
+                throw AuctionCoordinatorError.proposalRejected(error)
+            } catch is AuctionProtocolError {
+                continue
             }
-            guard applied else { throw AuctionCoordinatorError.engineRejected }
-            return decision
-        } catch let error as AuctionProtocolError {
-            throw AuctionCoordinatorError.proposalRejected(error)
         }
+        throw AuctionCoordinatorError.engineRejected
     }
 }
 

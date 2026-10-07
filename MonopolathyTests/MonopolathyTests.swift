@@ -334,6 +334,17 @@ final class MonopolathyTests: XCTestCase {
         XCTAssertThrowsError(try AuctionProtocol.decision(from: "{\"action\":\"bid\",\"amount\":0}", minimumBid: 76, availableCash: bidder.cash))
     }
 
+    func testAuctionCoordinatorRetriesInvalidBid() async throws {
+        let engine = GameEngine(dice: { (3, 3) })
+        engine.start(endpoints: fourPlayers)
+        XCTAssertTrue(engine.submit(.rollDice))
+        XCTAssertTrue(engine.submit(.declineProperty))
+        let bidder = engine.players[1]
+        let decision = try await AuctionCoordinator().requestAuctionDecision(engine: engine, bidder: bidder, transport: ReplySequenceTransport(replies: ["{\"action\":\"bid\",\"amount\":0}", "{\"action\":\"pass\"}"]))
+        XCTAssertEqual(decision, .pass)
+        XCTAssertTrue(engine.auction?.passedPlayerIDs.contains(bidder.id) == true)
+    }
+
     func testTradeCoordinatorExecutesOnlyAcceptedValidatedOffer() async throws {
         let engine = GameEngine()
         engine.start(endpoints: fourPlayers)
@@ -446,4 +457,10 @@ private final class RollSequence {
 private struct FixedTransport: PlayerTurnTransport {
     let reply: String
     func respond(to prompt: String) async throws -> String { reply }
+}
+
+private actor ReplySequenceTransport: PlayerTurnTransport {
+    private var replies: [String]
+    init(replies: [String]) { self.replies = replies }
+    func respond(to prompt: String) async throws -> String { replies.removeFirst() }
 }
