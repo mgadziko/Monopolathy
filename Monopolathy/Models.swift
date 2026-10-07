@@ -118,6 +118,7 @@ struct Player: Identifiable, Codable, Equatable {
     var cash: Int
     var properties: Set<Int>
     var inJailTurns: Int
+    var getOutOfJailFreeCards: Int
     var bankrupt: Bool
 
     var netWorth: Int {

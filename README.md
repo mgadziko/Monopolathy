@@ -15,11 +15,13 @@ the app, rather than any model, is the authoritative rules engine.
 - A separately tested standard-rule catalog: all 32 card effects, the 22
   property rent schedules, monopoly double rent, mortgage arithmetic, and
   the finite 32-house / 12-hotel bank supply.
+- Shuffled Chance and Community Chest deck state with tested action resolution
+  for movement, payments, player-to-player card transfers, repairs, jail, and
+  Get Out of Jail Free ownership.
 - No built-in AI strategy and no remote LLM turns yet.
 
-The remaining standard-rules execution work includes drawing and resolving the
-complete card decks, auctions, mortgages, houses/hotels, bankruptcy, trading,
-and the structured turn-proposal protocol.
+The remaining standard-rules execution work includes auctions, mortgages,
+houses/hotels, bankruptcy, trading, and the structured turn-proposal protocol.
 
 ## Build and test
 

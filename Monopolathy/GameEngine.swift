@@ -12,13 +12,18 @@ final class GameEngine: ObservableObject {
     @Published private(set) var lastRoll: (Int, Int)?
     @Published private(set) var log: [GameLogEntry] = []
     @Published private(set) var doublesThisTurn = 0
+    @Published private(set) var buildingsBySpaceID: [Int: Int] = [:]
 
     private let startingCash = 1_500
     private let dice: () -> (Int, Int)
+    private let deckOrder: [MonopolyCard]?
     private var pendingExtraRoll = false
+    private var chanceCards: [MonopolyCard] = []
+    private var communityChestCards: [MonopolyCard] = []
 
-    init(dice: @escaping () -> (Int, Int) = { (Int.random(in: 1...6), Int.random(in: 1...6)) }) {
+    init(dice: @escaping () -> (Int, Int) = { (Int.random(in: 1...6), Int.random(in: 1...6)) }, deckOrder: [MonopolyCard]? = nil) {
         self.dice = dice
+        self.deckOrder = deckOrder
     }
 
     var currentPlayer: Player? {
@@ -33,7 +38,12 @@ final class GameEngine: ObservableObject {
         guard let player = currentPlayer, !player.bankrupt else { return [] }
         switch phase {
         case .awaitingRoll:
-            return player.inJailTurns > 0 ? [.payJailFine, .attemptJailRoll, .useGetOutOfJailFree] : [.rollDice]
+            if player.inJailTurns > 0 {
+                var actions: [GameAction] = [.payJailFine, .attemptJailRoll]
+                if player.getOutOfJailFreeCards > 0 { actions.append(.useGetOutOfJailFree) }
+                return actions
+            }
+            return [.rollDice]
         case .awaitingPurchase: return [.buyProperty, .declineProperty]
         case .trading: return [.endTurn]
         case .resolvingAI, .gameOver: return []
@@ -48,7 +58,7 @@ final class GameEngine: ObservableObject {
         }
         let tokens = ["car", "hat", "dog", "ship"]
         players = unique.enumerated().map { index, endpoint in
-            Player(id: UUID(), name: endpoint.displayName, kind: .ai, token: tokens[index], position: 0, cash: startingCash, properties: [], inJailTurns: 0, bankrupt: false)
+            Player(id: UUID(), name: endpoint.displayName, kind: .ai, token: tokens[index], position: 0, cash: startingCash, properties: [], inJailTurns: 0, getOutOfJailFreeCards: 0, bankrupt: false)
         }
         currentPlayerIndex = 0
         phase = .awaitingRoll
@@ -56,6 +66,10 @@ final class GameEngine: ObservableObject {
         lastRoll = nil
         doublesThisTurn = 0
         pendingExtraRoll = false
+        buildingsBySpaceID = [:]
+        chanceCards = (deckOrder ?? MonopolyCard.standardDeck).filter { $0.deck == .chance }
+        communityChestCards = (deckOrder ?? MonopolyCard.standardDeck).filter { $0.deck == .communityChest }
+        if deckOrder == nil { chanceCards.shuffle(); communityChestCards.shuffle() }
         log = [GameLogEntry(text: "Standard-rules game started with four players.")]
     }
 
@@ -67,6 +81,7 @@ final class GameEngine: ObservableObject {
         lastRoll = nil
         doublesThisTurn = 0
         pendingExtraRoll = false
+        buildingsBySpaceID = [:]
         log = []
     }
 
@@ -82,7 +97,7 @@ final class GameEngine: ObservableObject {
         case .buyProperty: buyPendingProperty()
         case .declineProperty: declinePendingProperty()
         case .payJailFine: payJailFine()
-        case .useGetOutOfJailFree: append("Get Out of Jail Free cards arrive with the official decks.")
+        case .useGetOutOfJailFree: useGetOutOfJailFree()
         case .endTurn: endTurn()
         }
         return true
@@ -135,16 +150,20 @@ final class GameEngine: ObservableObject {
         case .goToJail: sendToJail(playerID: playerID, reason: "Go To Jail"); endTurn()
         case .tax: charge(playerID: playerID, amount: space.tax, reason: space.name); extraRoll ? beginExtraRoll() : endTurn()
         case .property, .railroad, .utility:
-            if let owner = owner(of: space.id), owner.id != playerID {
-                transfer(amount: rentFor(space: space, ownerID: owner.id), from: playerID, to: owner.id)
+            let spaceOwner = owner(of: space.id)
+            if let spaceOwner, spaceOwner.id != playerID {
+                transfer(amount: rentFor(space: space, ownerID: spaceOwner.id), from: playerID, to: spaceOwner.id)
                 extraRoll ? beginExtraRoll() : endTurn()
-            } else if owner == nil {
+            } else if spaceOwner == nil {
                 pendingAction = .offerPurchase(spaceID: space.id, price: space.price)
                 pendingExtraRoll = extraRoll
                 phase = .awaitingPurchase
             } else { extraRoll ? beginExtraRoll() : endTurn() }
-        case .chance, .communityChest:
-            append("Official Chance and Community Chest decks are the next rules-engine milestone.")
+        case .chance:
+            drawCard(from: .chance, for: playerID)
+            extraRoll ? beginExtraRoll() : endTurn()
+        case .communityChest:
+            drawCard(from: .communityChest, for: playerID)
             extraRoll ? beginExtraRoll() : endTurn()
         }
     }
@@ -176,11 +195,77 @@ final class GameEngine: ObservableObject {
         append("\(released.name) paid $50 and left jail.")
     }
 
+    private func useGetOutOfJailFree() {
+        guard var player = currentPlayer, player.getOutOfJailFreeCards > 0 else { return }
+        player.getOutOfJailFreeCards -= 1
+        player.inJailTurns = 0
+        update(player)
+        append("\(player.name) used a Get Out of Jail Free card.")
+    }
+
+    private func drawCard(from deck: CardDeck, for playerID: UUID) {
+        var cards = deck == .chance ? chanceCards : communityChestCards
+        guard !cards.isEmpty else { return }
+        let card = cards.removeFirst()
+        cards.append(card)
+        if deck == .chance { chanceCards = cards } else { communityChestCards = cards }
+        append("\(deck == .chance ? "Chance" : "Community Chest") card: \(card.id).")
+        resolve(card.effect, for: playerID)
+    }
+
+    private func resolve(_ effect: CardEffect, for playerID: UUID) {
+        guard let player = player(withID: playerID) else { return }
+        switch effect {
+        case let .moveTo(destination, collectGo):
+            var moved = player
+            if collectGo && destination < moved.position { moved.cash += StandardRules.goSalary }
+            moved.position = destination
+            update(moved)
+            append("\(moved.name) moved to \(board[destination].name).")
+        case let .moveBack(spaces):
+            var moved = player
+            moved.position = (moved.position - spaces + board.count) % board.count
+            update(moved)
+            append("\(moved.name) moved back \(spaces) spaces.")
+        case .nearestRailroad:
+            let railroads = [5, 15, 25, 35]
+            let destination = railroads.first(where: { $0 > player.position }) ?? 5
+            var moved = player
+            if destination < moved.position { moved.cash += StandardRules.goSalary }
+            moved.position = destination
+            update(moved)
+            append("\(moved.name) advanced to the nearest railroad.")
+        case .nearestUtility:
+            let destination = [12, 28].first(where: { $0 > player.position }) ?? 12
+            var moved = player
+            if destination < moved.position { moved.cash += StandardRules.goSalary }
+            moved.position = destination
+            update(moved)
+            append("\(moved.name) advanced to the nearest utility.")
+        case let .collect(amount):
+            var updated = player; updated.cash += amount; update(updated); append("\(updated.name) collected $\(amount).")
+        case let .payBank(amount): charge(playerID: playerID, amount: amount, reason: "card")
+        case let .payEachPlayer(amount):
+            for recipient in players where recipient.id != playerID && !recipient.bankrupt { transfer(amount: amount, from: playerID, to: recipient.id) }
+        case let .collectFromEachPlayer(amount):
+            for payer in players where payer.id != playerID && !payer.bankrupt { transfer(amount: amount, from: payer.id, to: playerID) }
+        case .goToJail: sendToJail(playerID: playerID, reason: "card")
+        case .getOutOfJailFree:
+            var updated = player; updated.getOutOfJailFreeCards += 1; update(updated); append("\(updated.name) received a Get Out of Jail Free card.")
+        case let .propertyRepairs(perHouse, perHotel):
+            let amount = player.properties.reduce(0) { partial, spaceID in
+                let buildings = buildingsBySpaceID[spaceID, default: 0]
+                return partial + (buildings == 5 ? perHotel : buildings * perHouse)
+            }
+            if amount > 0 { charge(playerID: playerID, amount: amount, reason: "property repairs") }
+        }
+    }
+
     private func beginExtraRoll() { phase = .awaitingRoll; append("\(currentPlayer?.name ?? "Player") rolls again.") }
     private func endTurn() { guard !players.isEmpty else { return }; doublesThisTurn = 0; currentPlayerIndex = (currentPlayerIndex + 1) % players.count; phase = .awaitingRoll; pendingAction = .none }
     private func charge(playerID: UUID, amount: Int, reason: String) { guard let index = players.firstIndex(where: { $0.id == playerID }) else { return }; players[index].cash -= amount; append("\(players[index].name) paid $\(amount) for \(reason).") }
     private func transfer(amount: Int, from payerID: UUID, to ownerID: UUID) { guard let payer = players.firstIndex(where: { $0.id == payerID }), let owner = players.firstIndex(where: { $0.id == ownerID }) else { return }; players[payer].cash -= amount; players[owner].cash += amount; append("\(players[payer].name) paid \(players[owner].name) $\(amount) rent.") }
-    private func rentFor(space: BoardSpace, ownerID: UUID) -> Int { switch space.kind { case .railroad: let count = player(withID: ownerID)?.properties.filter { board[$0].kind == .railroad }.count ?? 0; return [25, 50, 100, 200][max(0, min(count - 1, 3))]; case .utility: let count = player(withID: ownerID)?.properties.filter { board[$0].kind == .utility }.count ?? 0; return (count == 2 ? 10 : 4) * ((lastRoll?.0 ?? 0) + (lastRoll?.1 ?? 0)); default: return space.rent } }
+    private func rentFor(space: BoardSpace, ownerID: UUID) -> Int { switch space.kind { case .railroad: let count = player(withID: ownerID)?.properties.filter { board[$0].kind == .railroad }.count ?? 0; return [25, 50, 100, 200][max(0, min(count - 1, 3))]; case .utility: let count = player(withID: ownerID)?.properties.filter { board[$0].kind == .utility }.count ?? 0; return (count == 2 ? 10 : 4) * ((lastRoll?.0 ?? 0) + (lastRoll?.1 ?? 0)); case .property: let set = StandardRules.colorSet(for: space.id); let ownsSet = set.isSubset(of: player(withID: ownerID)?.properties ?? []); return StandardRules.baseRent(spaceID: space.id, buildings: buildingsBySpaceID[space.id, default: 0], ownsColorSet: ownsSet); default: return space.rent } }
     private func sendToJail(playerID: UUID, reason: String) { guard var player = player(withID: playerID) else { return }; player.position = 10; player.inJailTurns = 1; update(player); append("\(player.name) went to jail (\(reason)).") }
     private func owner(of spaceID: Int) -> Player? { players.first { $0.properties.contains(spaceID) } }
     private func player(withID id: UUID) -> Player? { players.first { $0.id == id } }

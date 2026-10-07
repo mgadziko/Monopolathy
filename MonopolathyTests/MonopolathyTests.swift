@@ -39,6 +39,24 @@ final class MonopolathyTests: XCTestCase {
         XCTAssertEqual(engine.currentPlayerIndex, 0)
     }
 
+    func testUnownedPropertyOffersPurchase() {
+        let sequence = RollSequence([(3, 3)])
+        let engine = GameEngine(dice: { sequence.next() })
+        engine.start(endpoints: fourPlayers)
+        XCTAssertTrue(engine.submit(.rollDice))
+        XCTAssertEqual(engine.phase, .awaitingPurchase)
+        XCTAssertEqual(engine.legalActions, [.buyProperty, .declineProperty])
+    }
+
+    func testChanceCardMovesPlayerAndPaysGoSalary() {
+        let cards = [MonopolyCard(id: "test-go", deck: .chance, effect: .moveTo(0, collectGo: true))]
+        let engine = GameEngine(dice: { (3, 4) }, deckOrder: cards)
+        engine.start(endpoints: fourPlayers)
+        XCTAssertTrue(engine.submit(.rollDice))
+        XCTAssertEqual(engine.players[0].position, 0)
+        XCTAssertEqual(engine.players[0].cash, 1_700)
+    }
+
     func testThreeConsecutiveDoublesSendsPlayerToJail() {
         let sequence = RollSequence([(1, 1), (1, 1), (1, 1)])
         let engine = GameEngine(dice: { sequence.next() })
