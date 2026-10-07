@@ -214,7 +214,8 @@ final class AuctionCoordinator {
                 guard applied else { throw AuctionCoordinatorError.engineRejected }
                 return decision
             } catch let error as AuctionProtocolError where attempt == 2 {
-                throw AuctionCoordinatorError.proposalRejected(error)
+                guard engine.passAuction(by: bidder.id) else { throw AuctionCoordinatorError.proposalRejected(error) }
+                return .pass
             } catch is AuctionProtocolError {
                 continue
             }

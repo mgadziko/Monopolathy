@@ -357,6 +357,17 @@ final class MonopolathyTests: XCTestCase {
         XCTAssertTrue(engine.auction?.passedPlayerIDs.contains(bidder.id) == true)
     }
 
+    func testAuctionCoordinatorForcesPassAfterThreeInvalidReplies() async throws {
+        let engine = GameEngine(dice: { (3, 3) })
+        engine.start(endpoints: fourPlayers)
+        XCTAssertTrue(engine.submit(.rollDice))
+        XCTAssertTrue(engine.submit(.declineProperty))
+        let bidder = engine.players[1]
+        let decision = try await AuctionCoordinator().requestAuctionDecision(engine: engine, bidder: bidder, transport: ReplySequenceTransport(replies: Array(repeating: "{\"action\":\"bid\",\"amount\":0}", count: 3)))
+        XCTAssertEqual(decision, .pass)
+        XCTAssertTrue(engine.auction?.passedPlayerIDs.contains(bidder.id) == true)
+    }
+
     func testTradeCoordinatorExecutesOnlyAcceptedValidatedOffer() async throws {
         let engine = GameEngine()
         engine.start(endpoints: fourPlayers)
