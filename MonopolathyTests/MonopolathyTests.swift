@@ -22,6 +22,18 @@ final class MonopolathyTests: XCTestCase {
         XCTAssertEqual(engine.legalActions, [.rollDice])
     }
 
+    func testGameSaveRoundTripsAuthoritativeState() throws {
+        let engine = GameEngine(dice: { (3, 3) })
+        engine.start(endpoints: fourPlayers)
+        XCTAssertTrue(engine.submit(.rollDice))
+        XCTAssertTrue(engine.submit(.buyProperty))
+        let save = engine.makeSave()
+        let decoded = try JSONDecoder().decode(GameSave.self, from: JSONEncoder().encode(save))
+        let restored = GameEngine()
+        XCTAssertTrue(restored.restore(from: decoded))
+        XCTAssertEqual(restored.makeSave(), save)
+    }
+
     func testIllegalActionIsRejectedWithoutChangingTurn() {
         let engine = GameEngine()
         engine.start(endpoints: fourPlayers)

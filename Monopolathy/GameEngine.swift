@@ -1,5 +1,26 @@
 import Foundation
 
+struct GameSave: Codable, Equatable {
+    let formatVersion: Int
+    let players: [Player]
+    let currentPlayerIndex: Int
+    let phase: TurnPhase
+    let pendingAction: PendingAction
+    let lastRoll: [Int]?
+    let doublesThisTurn: Int
+    let buildingsBySpaceID: [Int: Int]
+    let mortgagedSpaceIDs: Set<Int>
+    let auction: AuctionState?
+    let chanceCards: [MonopolyCard]
+    let communityChestCards: [MonopolyCard]
+    let bankruptcyAuctionQueue: [Int]
+    let debtPlayerID: UUID?
+    let debtCreditorID: UUID?
+    let debtContinuation: String
+    let pendingExtraRoll: Bool
+    let log: [GameLogEntry]
+}
+
 /// The authority for the table. Player endpoints submit one action; this
 /// engine alone decides whether that action is legal and applies it.
 @MainActor
@@ -39,6 +60,23 @@ final class GameEngine: ObservableObject {
     init(dice: @escaping () -> (Int, Int) = { (Int.random(in: 1...6), Int.random(in: 1...6)) }, deckOrder: [MonopolyCard]? = nil) {
         self.dice = dice
         self.deckOrder = deckOrder
+    }
+
+    func makeSave() -> GameSave {
+        GameSave(formatVersion: 1, players: players, currentPlayerIndex: currentPlayerIndex, phase: phase, pendingAction: pendingAction, lastRoll: lastRoll.map { [$0.0, $0.1] }, doublesThisTurn: doublesThisTurn, buildingsBySpaceID: buildingsBySpaceID, mortgagedSpaceIDs: mortgagedSpaceIDs, auction: auction, chanceCards: chanceCards, communityChestCards: communityChestCards, bankruptcyAuctionQueue: bankruptcyAuctionQueue, debtPlayerID: outstandingDebt?.playerID, debtCreditorID: outstandingDebt?.creditorID, debtContinuation: String(describing: debtContinuation), pendingExtraRoll: pendingExtraRoll, log: log)
+    }
+
+    @discardableResult
+    func restore(from save: GameSave) -> Bool {
+        guard save.formatVersion == 1, save.players.count >= 2, save.currentPlayerIndex >= 0, save.currentPlayerIndex < save.players.count else { return false }
+        players = save.players; currentPlayerIndex = save.currentPlayerIndex; phase = save.phase; pendingAction = save.pendingAction
+        lastRoll = save.lastRoll.flatMap { $0.count == 2 ? ($0[0], $0[1]) : nil }; doublesThisTurn = save.doublesThisTurn
+        buildingsBySpaceID = save.buildingsBySpaceID; mortgagedSpaceIDs = save.mortgagedSpaceIDs; auction = save.auction
+        chanceCards = save.chanceCards; communityChestCards = save.communityChestCards; bankruptcyAuctionQueue = save.bankruptcyAuctionQueue
+        if let debtor = save.debtPlayerID { outstandingDebt = OutstandingDebt(playerID: debtor, creditorID: save.debtCreditorID) } else { outstandingDebt = nil }
+        debtContinuation = save.debtContinuation == "extraRoll" ? .extraRoll : save.debtContinuation == "endTurn" ? .endTurn : .awaitRoll
+        pendingExtraRoll = save.pendingExtraRoll; log = save.log
+        return true
     }
 
     var currentPlayer: Player? {

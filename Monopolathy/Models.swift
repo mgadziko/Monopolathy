@@ -131,29 +131,38 @@ struct Player: Identifiable, Codable, Equatable {
     }
 }
 
-struct GameLogEntry: Identifiable, Equatable {
-    let id = UUID()
+struct GameLogEntry: Identifiable, Codable, Equatable {
+    let id: UUID
     let text: String
+
+    init(id: UUID = UUID(), text: String) {
+        self.id = id
+        self.text = text
+    }
 }
 
-struct TradeOffer: Identifiable, Equatable {
-    let id = UUID()
+struct TradeOffer: Identifiable, Codable, Equatable {
+    let id: UUID
     let fromPlayerID: UUID
     let toPlayerID: UUID
     var fromCash: Int
     var toCash: Int
     var fromProperties: Set<Int>
     var toProperties: Set<Int>
+
+    init(id: UUID = UUID(), fromPlayerID: UUID, toPlayerID: UUID, fromCash: Int, toCash: Int, fromProperties: Set<Int>, toProperties: Set<Int>) {
+        self.id = id; self.fromPlayerID = fromPlayerID; self.toPlayerID = toPlayerID; self.fromCash = fromCash; self.toCash = toCash; self.fromProperties = fromProperties; self.toProperties = toProperties
+    }
 }
 
-enum PendingAction: Equatable {
+enum PendingAction: Codable, Equatable {
     case none
     case offerPurchase(spaceID: Int, price: Int)
     case tradeOffer(TradeOffer)
     case gameOver(winner: UUID)
 }
 
-struct AuctionState: Equatable {
+struct AuctionState: Codable, Equatable {
     let spaceID: Int
     /// Standard Monopoly auctions are open to every non-bankrupt player,
     /// including the player who declined the initial purchase option.
@@ -163,7 +172,7 @@ struct AuctionState: Equatable {
     var passedPlayerIDs: Set<UUID>
 }
 
-enum TurnPhase: String {
+enum TurnPhase: String, Codable {
     case awaitingRoll = "Roll"
     case awaitingPurchase = "Purchase"
     case auction = "Auction"
