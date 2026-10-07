@@ -122,18 +122,30 @@ final class GameEngine: ObservableObject {
         let roll = dice()
         lastRoll = roll
         let doubles = roll.0 == roll.1
+        var leftJailByDoubles = false
 
         if player.inJailTurns > 0 {
             guard doubles else {
                 player.inJailTurns += 1
                 update(player)
                 append("\(player.name) did not roll doubles in jail.")
-                endTurn()
+                if player.inJailTurns > 3 {
+                    charge(playerID: player.id, amount: StandardRules.jailFine, reason: "third failed jail roll")
+                    guard var released = self.player(withID: player.id), !released.bankrupt else { endTurn(); return }
+                    released.inJailTurns = 0
+                    update(released)
+                    append("\(released.name) paid $50 after a third failed jail roll and left jail.")
+                    move(playerID: released.id, by: roll.0 + roll.1)
+                    resolveLanding(for: released.id, extraRoll: false)
+                } else {
+                    endTurn()
+                }
                 return
             }
             player.inJailTurns = 0
             update(player)
             append("\(player.name) rolled doubles and left jail.")
+            leftJailByDoubles = true
         }
 
         doublesThisTurn = doubles ? doublesThisTurn + 1 : 0
@@ -144,7 +156,7 @@ final class GameEngine: ObservableObject {
         }
 
         move(playerID: player.id, by: roll.0 + roll.1)
-        resolveLanding(for: player.id, extraRoll: doubles)
+        resolveLanding(for: player.id, extraRoll: doubles && !leftJailByDoubles)
     }
 
     private func move(playerID: UUID, by spaces: Int) {
@@ -433,6 +445,12 @@ final class GameEngine: ObservableObject {
     func setCashForTesting(_ cash: Int, for playerID: UUID) {
         guard let index = players.firstIndex(where: { $0.id == playerID }) else { return }
         players[index].cash = cash
+    }
+    func sendToJailForTesting(_ playerID: UUID) { sendToJail(playerID: playerID, reason: "test") }
+    func makeCurrentForTesting(_ playerID: UUID) {
+        guard let index = players.firstIndex(where: { $0.id == playerID }) else { return }
+        currentPlayerIndex = index
+        phase = .awaitingRoll
     }
     #endif
 }

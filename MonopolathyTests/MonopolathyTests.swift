@@ -211,6 +211,32 @@ final class MonopolathyTests: XCTestCase {
         XCTAssertEqual(engine.currentPlayerIndex, 1)
     }
 
+    func testJailDoublesMovePlayerWithoutExtraRoll() {
+        let engine = GameEngine(dice: { (5, 5) })
+        engine.start(endpoints: fourPlayers)
+        let jailed = engine.players[0]
+        engine.sendToJailForTesting(jailed.id)
+        XCTAssertTrue(engine.submit(.attemptJailRoll))
+        XCTAssertEqual(engine.players[0].inJailTurns, 0)
+        XCTAssertEqual(engine.players[0].position, 20)
+        XCTAssertEqual(engine.currentPlayerIndex, 1)
+    }
+
+    func testThirdFailedJailRollForcesFineAndMovement() {
+        let engine = GameEngine(dice: { (1, 2) })
+        engine.start(endpoints: fourPlayers)
+        let jailed = engine.players[0]
+        engine.sendToJailForTesting(jailed.id)
+        for _ in 0..<3 {
+            engine.makeCurrentForTesting(jailed.id)
+            XCTAssertTrue(engine.submit(.attemptJailRoll))
+        }
+        XCTAssertEqual(engine.players[0].inJailTurns, 0)
+        XCTAssertEqual(engine.players[0].cash, 1_450)
+        XCTAssertEqual(engine.players[0].position, 13)
+        XCTAssertEqual(engine.phase, .awaitingPurchase)
+    }
+
     func testStandardRulesCatalogHasCompleteCardDecks() {
         let chance = MonopolyCard.standardDeck.filter { $0.deck == .chance }
         let chest = MonopolyCard.standardDeck.filter { $0.deck == .communityChest }

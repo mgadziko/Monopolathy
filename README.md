@@ -11,7 +11,7 @@ the app, rather than any model, is the authoritative rules engine.
   selectable.
 - Deterministic, testable turn authority with legal-action validation,
   doubles/three-doubles handling, GO salary, basic property purchase, rent,
-  taxes, and jail entry.
+  taxes, and standard jail release rules.
 - A separately tested standard-rule catalog: all 32 card effects, the 22
   property rent schedules, monopoly double rent, mortgage arithmetic, and
   the finite 32-house / 12-hotel bank supply.
@@ -45,7 +45,7 @@ the app, rather than any model, is the authoritative rules engine.
   by an exact-offer acceptance, so automatic play continues afterward.
 - No built-in AI strategy and no ChatGPT connection yet.
 
-The remaining work is a user-authorized ChatGPT sign-in flow and final
+The remaining work is a user-authorized ChatGPT sign-in flow and continued
 rule-edge-case auditing. No endpoint will receive general tool access.
 
 ## Build and test
