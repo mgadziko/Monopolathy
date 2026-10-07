@@ -110,3 +110,48 @@ final class TurnCoordinator {
         }
     }
 }
+
+enum HermesTurnTransportError: LocalizedError {
+    case profileUnavailable
+    case invalidResponse
+
+    var errorDescription: String? { self == .profileUnavailable ? "The selected Hermes profile is unavailable." : "The Hermes model returned no usable response." }
+}
+
+/// A deliberately narrow adapter for Triopathy-compatible Hermes profiles.
+/// It sends exactly one prompt to the selected model endpoint; it does not run
+/// Hermes tools, sessions, memory, or terminal workflows.
+struct HermesTurnTransport: PlayerTurnTransport {
+    let endpoint: PlayerEndpoint
+
+    func respond(to prompt: String) async throws -> String {
+        guard let profile = endpoint.hermesProfileName,
+              let text = try? String(contentsOf: URL(fileURLWithPath: NSString(string: "~/.hermes/profiles/\(profile)/config.yaml").expandingTildeInPath)),
+              let backend = Self.selectedBackend(in: text) else { throw HermesTurnTransportError.profileUnavailable }
+        var url = backend.api
+        url.appendPathComponent("chat/completions")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 120
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(Request(model: backend.model, messages: [.init(role: "user", content: prompt)], maxTokens: 128, temperature: 0))
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode),
+              let reply = try? JSONDecoder().decode(Response.self, from: data).choices.first?.message.content?.trimmingCharacters(in: .whitespacesAndNewlines), !reply.isEmpty else { throw HermesTurnTransportError.invalidResponse }
+        return reply
+    }
+
+    private static func selectedBackend(in text: String) -> (api: URL, model: String)? {
+        let lines = text.components(separatedBy: .newlines)
+        var provider: String?; var model: String?; var inModel = false
+        for line in lines { if line == "model:" { inModel = true; continue }; if inModel && !line.hasPrefix(" ") { break }; if inModel { let t = line.trimmingCharacters(in: .whitespaces); if t.hasPrefix("provider:") { provider = value(t) }; if t.hasPrefix("default:") { model = value(t) } } }
+        guard let provider, let model else { return nil }
+        var api: String?; var inside = false
+        for line in lines { if line == "  \(provider):" { inside = true; continue }; if inside && line.hasPrefix("  ") && !line.hasPrefix("    ") { break }; if inside && line.trimmingCharacters(in: .whitespaces).hasPrefix("api:") { api = value(line.trimmingCharacters(in: .whitespaces)) } }
+        guard let api, let url = URL(string: api) else { return nil }
+        return (url, model)
+    }
+    private static func value(_ text: String) -> String { text.split(separator: ":", maxSplits: 1).dropFirst().joined(separator: ":").trimmingCharacters(in: .whitespaces) }
+    private struct Request: Encodable { struct Message: Encodable { let role: String; let content: String }; let model: String; let messages: [Message]; let maxTokens: Int; let temperature: Double; enum CodingKeys: String, CodingKey { case model, messages, temperature; case maxTokens = "max_tokens" } }
+    private struct Response: Decodable { struct Choice: Decodable { struct Message: Decodable { let content: String? }; let message: Message }; let choices: [Choice] }
+}
