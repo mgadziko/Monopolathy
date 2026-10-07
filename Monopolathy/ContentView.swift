@@ -161,13 +161,6 @@ struct ContentView: View {
                     ForEach(0..<11, id: \.self) { column in
                         if let spaceID = boardSpaceID(row: row, column: column) {
                             boardSpace(spaceID)
-                        } else if row == 5 && column == 5 {
-                            VStack(spacing: 4) {
-                                Text("MONOPOLATHY").font(.system(size: 14, weight: .bold, design: .rounded))
-                                Text(game.phase.rawValue.uppercased()).font(.caption2).foregroundStyle(.secondary)
-                            }
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .background(.thinMaterial)
                         } else {
                             Color.clear.frame(maxWidth: .infinity, maxHeight: .infinity)
                         }
@@ -180,6 +173,36 @@ struct ContentView: View {
         .background(Color(nsColor: .windowBackgroundColor))
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .overlay(RoundedRectangle(cornerRadius: 10).stroke(.secondary.opacity(0.35)))
+        .overlay(boardDashboard.padding(24))
+    }
+
+    private var boardDashboard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("MONOPOLATHY").font(.system(size: 17, weight: .bold, design: .rounded))
+            Text("\(game.phase.rawValue) • \(game.currentPlayer?.name ?? "—")")
+                .font(.caption).foregroundStyle(.secondary)
+            Divider()
+            ForEach(game.players) { player in
+                HStack(spacing: 6) {
+                    Circle().fill(tokenColor(for: player.id)).frame(width: 9, height: 9)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(player.name).font(.caption.weight(.semibold)).lineLimit(1)
+                        Text("$\(player.cash) • \(game.board[player.position].name)")
+                            .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                }
+                .opacity(player.bankrupt ? 0.45 : 1)
+            }
+            if let roll = game.lastRoll {
+                Divider()
+                Text("Last roll  \(roll.0) + \(roll.1)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: 245, alignment: .leading)
+        .background(.regularMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(.secondary.opacity(0.35)))
     }
 
     @ViewBuilder private func boardSpace(_ spaceID: Int) -> some View {

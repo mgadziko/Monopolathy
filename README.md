@@ -58,8 +58,9 @@ the app, rather than any model, is the authoritative rules engine.
   automatically. The optional trade window uses a separate proposal followed
   by an exact-offer acceptance, so automatic play continues afterward.
 - The live table includes a complete board view: player tokens move around the
-  standard 40 spaces, while the side panel shows each player's cash, location,
-  and the chronological table log.
+  standard 40 spaces. Its central live scoreboard keeps the current phase,
+  player, player-color key, cash, locations, and last roll visible, while the
+  side panel retains the chronological table log.
 - No built-in AI strategy and no ChatGPT connection yet.
 
 The remaining work is a user-authorized ChatGPT sign-in flow and continued
