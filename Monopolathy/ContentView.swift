@@ -1,7 +1,8 @@
 import SwiftUI
 
 struct ContentView: View {
-    @StateObject private var game = GameEngine()
+    @ObservedObject var game: GameEngine
+    @EnvironmentObject private var session: GameSession
     @State private var slots = [
         PlayerSlot(id: 0, endpoint: nil, token: "Car"),
         PlayerSlot(id: 1, endpoint: nil, token: "Hat"),
@@ -30,6 +31,7 @@ struct ContentView: View {
             if game.players.isEmpty { lobby } else { table }
         }
         .task { await refreshPlayers() }
+        .onAppear { session.pauseAutomaticPlay = { isAutoPlaying = false } }
     }
 
     private var lobby: some View {
