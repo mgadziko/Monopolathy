@@ -102,7 +102,7 @@ struct ContentView: View {
             HStack {
                 VStack(alignment: .leading) {
                     Text("Monopathy").font(.largeTitle.bold())
-                    Text("Current player: \(game.currentPlayer?.name ?? "—") • \(game.phase.rawValue)").foregroundStyle(.secondary)
+                    Text("Current player: \(game.currentPlayer.map(shortName) ?? "—") • \(game.phase.rawValue)").foregroundStyle(.secondary)
                 }
                 Spacer()
                 if let roll = game.lastRoll { Text("Last roll: \(roll.0) + \(roll.1)").monospacedDigit() }
@@ -111,18 +111,27 @@ struct ContentView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Players").font(.headline)
                     ForEach(game.players) { player in
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("\(player.token)  \(player.name): $\(player.cash)")
-                            Text(game.board[player.position].name)
-                                .font(.caption).foregroundStyle(.secondary)
+                        HStack(alignment: .top, spacing: 8) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack(spacing: 4) {
+                                    Text(player.token).foregroundStyle(tokenColor(for: player.id))
+                                    Text("\(shortName(player)): $\(player.cash)")
+                                }
+                                Text(game.board[player.position].name)
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer(minLength: 4)
+                            ownershipDots(for: player)
                         }
                     }
-                    Text("Table log").font(.headline)
-                    ScrollView { LazyVStack(alignment: .leading, spacing: 6) { ForEach(game.log) { Text($0.text).font(.callout) } } }
-                        .frame(minHeight: 250)
-                }.frame(width: 340, alignment: .leading)
+                }.frame(width: 230, alignment: .leading)
                 board
                     .frame(minWidth: 560, maxWidth: .infinity)
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Table log").font(.headline)
+                    ScrollView { LazyVStack(alignment: .leading, spacing: 6) { ForEach(game.log) { Text($0.text).font(.callout) } } }
+                        .frame(minHeight: 400)
+                }.frame(width: 300, alignment: .leading)
             }
             if let playerTurnStatus {
                 Text(playerTurnStatus).foregroundStyle(.secondary)
@@ -180,7 +189,7 @@ struct ContentView: View {
     private var boardDashboard: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("MONOPATHY").font(.system(size: 21, weight: .bold, design: .rounded))
-            Text("\(game.phase.rawValue) • \(game.currentPlayer?.name ?? "—")")
+            Text("\(game.phase.rawValue) • \(game.currentPlayer.map(shortName) ?? "—")")
                 .font(.callout).foregroundStyle(.secondary)
             Text("Bank: \(game.availableHouses) houses • \(game.availableHotels) hotels")
                 .font(.caption).foregroundStyle(.secondary)
@@ -189,11 +198,7 @@ struct ContentView: View {
                 HStack(spacing: 6) {
                     Circle().fill(tokenColor(for: player.id)).frame(width: 9, height: 9)
                     VStack(alignment: .leading, spacing: 1) {
-                        HStack(spacing: 4) {
-                            Text(player.name).font(.callout.weight(.semibold)).lineLimit(1)
-                            Spacer(minLength: 2)
-                            ownershipDots(for: player)
-                        }
+                        Text(shortName(player)).font(.callout.weight(.semibold)).lineLimit(1)
                         Text("$\(player.cash) • \(game.board[player.position].name)")
                             .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                     }
@@ -220,13 +225,43 @@ struct ContentView: View {
     }
 
     private func ownershipDots(for player: Player) -> some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.fixed(7), spacing: 2), count: 8), spacing: 2) {
-            ForEach(player.properties.sorted(), id: \.self) { spaceID in
-                Circle().fill(boardColor(for: spaceID)).frame(width: 7, height: 7)
-                    .overlay(Circle().stroke(.white.opacity(0.7), lineWidth: 0.5))
+        let groups = ownershipDotGroups(for: player)
+        return HStack(alignment: .top, spacing: 2) {
+            ForEach(groups.indices, id: \.self) { index in
+                VStack(spacing: 2) {
+                    ForEach(groups[index], id: \.self) { spaceID in
+                        Circle().fill(boardColor(for: spaceID)).frame(width: 7, height: 7)
+                            .overlay(Circle().stroke(.white.opacity(0.7), lineWidth: 0.5))
+                    }
+                }
             }
         }
-        .frame(width: 70, alignment: .trailing)
+        .frame(minWidth: 30, alignment: .trailing)
+    }
+
+    private func ownershipDotGroups(for player: Player) -> [[Int]] {
+        let grouped = Dictionary(grouping: player.properties.sorted(), by: ownershipDotGroup)
+        return grouped.values.sorted { ($0.min() ?? 0) < ($1.min() ?? 0) }
+    }
+
+    private func ownershipDotGroup(for spaceID: Int) -> String {
+        switch spaceID {
+        case 1, 3: return "purple"
+        case 6, 8, 9: return "cyan"
+        case 11, 13, 14: return "pink"
+        case 16, 18, 19: return "orange"
+        case 21, 23, 24: return "red"
+        case 26, 27, 29: return "yellow"
+        case 31, 32, 34: return "green"
+        case 37, 39: return "blue"
+        case 5, 15, 25, 35: return "railroad"
+        case 12, 28: return "water"
+        default: return "other"
+        }
+    }
+
+    private func shortName(_ player: Player) -> String {
+        player.name.replacingOccurrences(of: "hermes-", with: "")
     }
 
     @ViewBuilder private func boardSpace(_ spaceID: Int) -> some View {
@@ -292,8 +327,7 @@ struct ContentView: View {
         case 31, 32, 34: .green
         case 37, 39: .blue
         case 5, 15, 25, 35: .black
-        case 12: .purple
-        case 28: .brown
+        case 12, 28: .brown
         default: .gray
         }
     }
