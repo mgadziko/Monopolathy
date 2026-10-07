@@ -36,6 +36,14 @@ final class GameEngine: ObservableObject {
         Dictionary(uniqueKeysWithValues: players.flatMap { player in player.properties.map { ($0, player) } })
     }
 
+    var availableHouses: Int {
+        StandardRules.totalHouses - buildingsBySpaceID.values.filter { (1...4).contains($0) }.reduce(0, +)
+    }
+
+    var availableHotels: Int {
+        StandardRules.totalHotels - buildingsBySpaceID.values.filter { $0 == 5 }.count
+    }
+
     var legalActions: [GameAction] {
         guard let player = currentPlayer, !player.bankrupt else { return [] }
         switch phase {
@@ -235,6 +243,55 @@ final class GameEngine: ObservableObject {
         return true
     }
 
+    @discardableResult
+    func unmortgage(spaceID: Int, by playerID: UUID) -> Bool {
+        guard mortgagedSpaceIDs.contains(spaceID), let index = players.firstIndex(where: { $0.id == playerID }), players[index].properties.contains(spaceID) else { return false }
+        let cost = StandardRules.unmortgageCost(for: board[spaceID])
+        guard players[index].cash >= cost else { return false }
+        players[index].cash -= cost
+        mortgagedSpaceIDs.remove(spaceID)
+        append("\(players[index].name) unmortgaged \(board[spaceID].name).")
+        return true
+    }
+
+    func canBuild(on spaceID: Int, by playerID: UUID) -> Bool {
+        guard board.indices.contains(spaceID), let player = player(withID: playerID),
+              board[spaceID].kind == .property, player.properties.contains(spaceID),
+              let group = board[spaceID].colorGroup else { return false }
+        let spaces = board.filter { $0.kind == .property && $0.colorGroup == group }.map(\.id)
+        guard Set(spaces).isSubset(of: player.properties), !spaces.contains(where: mortgagedSpaceIDs.contains) else { return false }
+        let current = buildingsBySpaceID[spaceID, default: 0]
+        guard current < 5 else { return false }
+        let groupCounts = spaces.map { buildingsBySpaceID[$0, default: 0] }
+        guard current == (groupCounts.min() ?? 0), player.cash >= board[spaceID].houseCost else { return false }
+        return current == 4 ? availableHotels > 0 : availableHouses > 0
+    }
+
+    @discardableResult
+    func buyBuilding(on spaceID: Int, by playerID: UUID) -> Bool {
+        guard canBuild(on: spaceID, by: playerID), let index = players.firstIndex(where: { $0.id == playerID }) else { return false }
+        players[index].cash -= board[spaceID].houseCost
+        let next = buildingsBySpaceID[spaceID, default: 0] + 1
+        buildingsBySpaceID[spaceID] = next
+        append("\(players[index].name) built \(next == 5 ? "a hotel" : "a house") on \(board[spaceID].name).")
+        return true
+    }
+
+    @discardableResult
+    func sellBuilding(on spaceID: Int, by playerID: UUID) -> Bool {
+        guard let player = player(withID: playerID), player.properties.contains(spaceID),
+              let group = board[spaceID].colorGroup else { return false }
+        let spaces = board.filter { $0.kind == .property && $0.colorGroup == group }.map(\.id)
+        let current = buildingsBySpaceID[spaceID, default: 0]
+        let maximum = spaces.map { buildingsBySpaceID[$0, default: 0] }.max() ?? 0
+        guard current > 0, current == maximum, let index = players.firstIndex(where: { $0.id == playerID }) else { return false }
+        if current == 5 && availableHouses < 4 { return false }
+        buildingsBySpaceID[spaceID] = current - 1
+        players[index].cash += board[spaceID].houseCost / 2
+        append("\(players[index].name) sold \(current == 5 ? "a hotel" : "a house") on \(board[spaceID].name).")
+        return true
+    }
+
     private func payJailFine() {
         guard let player = currentPlayer else { return }
         charge(playerID: player.id, amount: 50, reason: "jail fine")
@@ -320,4 +377,11 @@ final class GameEngine: ObservableObject {
     private func player(withID id: UUID) -> Player? { players.first { $0.id == id } }
     private func update(_ player: Player) { if let index = players.firstIndex(where: { $0.id == player.id }) { players[index] = player } }
     private func append(_ text: String) { log.insert(GameLogEntry(text: text), at: 0) }
+
+    #if DEBUG
+    func grantPropertiesForTesting(_ spaces: Set<Int>, to playerID: UUID) {
+        guard let index = players.firstIndex(where: { $0.id == playerID }) else { return }
+        players[index].properties.formUnion(spaces)
+    }
+    #endif
 }

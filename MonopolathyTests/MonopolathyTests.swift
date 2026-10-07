@@ -84,6 +84,36 @@ final class MonopolathyTests: XCTestCase {
         XCTAssertFalse(engine.mortgage(spaceID: 6, by: owner.id))
     }
 
+    func testBuildingsRequireACompleteSetAndFollowEvenBuilding() {
+        let engine = GameEngine()
+        engine.start(endpoints: fourPlayers)
+        let owner = engine.players[0]
+        XCTAssertFalse(engine.buyBuilding(on: 1, by: owner.id))
+        engine.grantPropertiesForTesting([1, 3], to: owner.id)
+        XCTAssertTrue(engine.buyBuilding(on: 1, by: owner.id))
+        XCTAssertFalse(engine.buyBuilding(on: 1, by: owner.id))
+        XCTAssertTrue(engine.buyBuilding(on: 3, by: owner.id))
+        XCTAssertEqual(engine.availableHouses, 30)
+    }
+
+    func testHotelsUseFiniteInventoryAndPreventMortgagingDevelopedSet() {
+        let engine = GameEngine()
+        engine.start(endpoints: fourPlayers)
+        let owner = engine.players[0]
+        engine.grantPropertiesForTesting([1, 3], to: owner.id)
+        for _ in 0..<4 {
+            XCTAssertTrue(engine.buyBuilding(on: 1, by: owner.id))
+            XCTAssertTrue(engine.buyBuilding(on: 3, by: owner.id))
+        }
+        XCTAssertTrue(engine.buyBuilding(on: 1, by: owner.id))
+        XCTAssertEqual(engine.buildingsBySpaceID[1], 5)
+        XCTAssertEqual(engine.availableHotels, 11)
+        XCTAssertFalse(engine.mortgage(spaceID: 3, by: owner.id))
+        XCTAssertTrue(engine.sellBuilding(on: 1, by: owner.id))
+        XCTAssertEqual(engine.buildingsBySpaceID[1], 4)
+        XCTAssertEqual(engine.availableHotels, 12)
+    }
+
     func testThreeConsecutiveDoublesSendsPlayerToJail() {
         let sequence = RollSequence([(1, 1), (1, 1), (1, 1)])
         let engine = GameEngine(dice: { sequence.next() })

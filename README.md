@@ -20,10 +20,12 @@ the app, rather than any model, is the authoritative rules engine.
   Get Out of Jail Free ownership.
 - Validated auction state for declined properties, plus mortgage state that
   pays half the purchase price and blocks invalid repeat mortgages.
+- Full-set, unmortgaged-only house and hotel construction with even-building
+  and selling enforcement, finite bank inventory, and mortgage restrictions.
 - No built-in AI strategy and no remote LLM turns yet.
 
-The remaining standard-rules execution work includes unmortgaging,
-houses/hotels, bankruptcy, trading, and the structured turn-proposal protocol.
+The remaining standard-rules execution work includes bankruptcy, trading, and
+the structured turn-proposal protocol.
 
 ## Build and test
 

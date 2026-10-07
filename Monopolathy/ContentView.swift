@@ -1,5 +1,4 @@
 import SwiftUI
-import Network
 
 struct ContentView: View {
     @StateObject private var game = GameEngine()
@@ -139,15 +138,51 @@ enum EndpointProbe {
     static func check(_ endpoint: PlayerEndpoint) async -> PlayerAvailability {
         guard let profile = endpoint.hermesProfileName else { return .unavailable(reason: "ChatGPT connection not configured") }
         let config = URL(fileURLWithPath: NSString(string: "~/.hermes/profiles/\(profile)/config.yaml").expandingTildeInPath)
-        guard let text = try? String(contentsOf: config), let api = text.split(separator: "\n").first(where: { $0.trimmingCharacters(in: .whitespaces).hasPrefix("api:") })?.split(separator: ":", maxSplits: 1).last?.trimmingCharacters(in: .whitespaces), let url = URL(string: api), let host = url.host, let port = NWEndpoint.Port(rawValue: UInt16(url.port ?? 80)) else { return .unavailable(reason: "Profile not configured") }
-        let available = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
-            let connection = NWConnection(host: NWEndpoint.Host(host), port: port, using: .tcp)
-            var finished = false
-            func finish(_ value: Bool) { guard !finished else { return }; finished = true; connection.cancel(); continuation.resume(returning: value) }
-            connection.stateUpdateHandler = { state in if case .ready = state { finish(true) }; if case .failed = state { finish(false) } }
-            connection.start(queue: .global(qos: .utility))
-            DispatchQueue.global().asyncAfter(deadline: .now() + 2) { finish(false) }
-        }
-        return available ? .available(detail: "Ready") : .unavailable(reason: "Not reachable")
+        guard let text = try? String(contentsOf: config), let backend = selectedBackend(in: text) else { return .unavailable(reason: "Profile not configured") }
+        var modelsURL = backend.api
+        modelsURL.appendPathComponent("models")
+        var request = URLRequest(url: modelsURL)
+        request.timeoutInterval = 3
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else { return .unavailable(reason: "Model service unavailable") }
+            let models = try JSONDecoder().decode(ModelList.self, from: data)
+            guard models.data.contains(where: { $0.id == backend.model }) else { return .unavailable(reason: "Expected model not loaded") }
+            return .available(detail: "Model ready")
+        } catch { return .unavailable(reason: "Model service not reachable") }
     }
+
+    private static func selectedBackend(in text: String) -> (api: URL, model: String)? {
+        let lines = text.components(separatedBy: .newlines)
+        var selectedProvider: String?
+        var defaultModel: String?
+        var inModel = false
+        for line in lines {
+            if line == "model:" { inModel = true; continue }
+            if inModel && !line.hasPrefix(" ") { break }
+            guard inModel else { continue }
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("provider:") { selectedProvider = value(after: ":", in: trimmed) }
+            if trimmed.hasPrefix("default:") { defaultModel = value(after: ":", in: trimmed) }
+        }
+        guard let selectedProvider, let defaultModel else { return nil }
+        let header = "  \(selectedProvider):"
+        var inProvider = false
+        var api: String?
+        for line in lines {
+            if line == header { inProvider = true; continue }
+            if inProvider && line.hasPrefix("  ") && !line.hasPrefix("    ") { break }
+            guard inProvider else { continue }
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("api:") { api = value(after: ":", in: trimmed) }
+        }
+        guard let api, let url = URL(string: api) else { return nil }
+        return (url, defaultModel)
+    }
+
+    private static func value(after separator: Character, in text: String) -> String {
+        text.split(separator: separator, maxSplits: 1).dropFirst().joined(separator: String(separator)).trimmingCharacters(in: .whitespaces)
+    }
+
+    private struct ModelList: Decodable { struct Model: Decodable { let id: String }; let data: [Model] }
 }
