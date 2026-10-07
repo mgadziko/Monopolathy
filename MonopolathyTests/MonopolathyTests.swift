@@ -416,6 +416,17 @@ final class MonopolathyTests: XCTestCase {
         XCTAssertEqual(StandardRules.totalHotels, 12)
     }
 
+    func testAssetSnapshotReportsFiniteBuildingInventory() {
+        let engine = GameEngine()
+        engine.start(endpoints: fourPlayers)
+        let owner = engine.players[0]
+        engine.grantPropertiesForTesting([1, 3], to: owner.id)
+        XCTAssertTrue(engine.buyBuilding(on: 1, by: owner.id))
+        let snapshot = AssetSnapshot(engine: engine, player: engine.players[0])
+        XCTAssertEqual(snapshot.availableHouses, 31)
+        XCTAssertEqual(snapshot.availableHotels, 12)
+    }
+
     func testStandardPropertyRentSchedulesAndMonopolies() {
         XCTAssertEqual(StandardRules.baseRent(spaceID: 1, buildings: 0, ownsColorSet: false), 2)
         XCTAssertEqual(StandardRules.baseRent(spaceID: 1, buildings: 0, ownsColorSet: true), 4)
