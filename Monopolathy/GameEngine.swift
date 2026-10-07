@@ -13,6 +13,8 @@ final class GameEngine: ObservableObject {
     @Published private(set) var log: [GameLogEntry] = []
     @Published private(set) var doublesThisTurn = 0
     @Published private(set) var buildingsBySpaceID: [Int: Int] = [:]
+    @Published private(set) var mortgagedSpaceIDs: Set<Int> = []
+    @Published private(set) var auction: AuctionState?
 
     private let startingCash = 1_500
     private let dice: () -> (Int, Int)
@@ -45,7 +47,7 @@ final class GameEngine: ObservableObject {
             }
             return [.rollDice]
         case .awaitingPurchase: return [.buyProperty, .declineProperty]
-        case .trading: return [.endTurn]
+        case .trading, .auction: return []
         case .resolvingAI, .gameOver: return []
         }
     }
@@ -67,6 +69,8 @@ final class GameEngine: ObservableObject {
         doublesThisTurn = 0
         pendingExtraRoll = false
         buildingsBySpaceID = [:]
+        mortgagedSpaceIDs = []
+        auction = nil
         chanceCards = (deckOrder ?? MonopolyCard.standardDeck).filter { $0.deck == .chance }
         communityChestCards = (deckOrder ?? MonopolyCard.standardDeck).filter { $0.deck == .communityChest }
         if deckOrder == nil { chanceCards.shuffle(); communityChestCards.shuffle() }
@@ -82,6 +86,8 @@ final class GameEngine: ObservableObject {
         doublesThisTurn = 0
         pendingExtraRoll = false
         buildingsBySpaceID = [:]
+        mortgagedSpaceIDs = []
+        auction = nil
         log = []
     }
 
@@ -179,11 +185,54 @@ final class GameEngine: ObservableObject {
     }
 
     private func declinePendingProperty() {
-        guard case let .offerPurchase(spaceID, _) = pendingAction else { return }
-        append("\(currentPlayer?.name ?? "Player") declined \(board[spaceID].name). Auction support is pending.")
+        guard case let .offerPurchase(spaceID, _) = pendingAction, let player = currentPlayer else { return }
+        append("\(player.name) declined \(board[spaceID].name). Auction opened.")
         pendingAction = .none
-        pendingExtraRoll ? beginExtraRoll() : endTurn()
-        pendingExtraRoll = false
+        auction = AuctionState(spaceID: spaceID, excludedPlayerID: player.id, leadingBidderID: nil, leadingBid: 0, passedPlayerIDs: [player.id])
+        phase = .auction
+    }
+
+    @discardableResult
+    func placeAuctionBid(_ amount: Int, by playerID: UUID) -> Bool {
+        guard var auction, let bidder = player(withID: playerID), !bidder.bankrupt,
+              playerID != auction.excludedPlayerID, !auction.passedPlayerIDs.contains(playerID),
+              amount > auction.leadingBid, amount <= bidder.cash else { return false }
+        auction.leadingBidderID = playerID
+        auction.leadingBid = amount
+        self.auction = auction
+        append("\(bidder.name) bid $\(amount) for \(board[auction.spaceID].name).")
+        return true
+    }
+
+    @discardableResult
+    func passAuction(by playerID: UUID) -> Bool {
+        guard var auction, playerID != auction.leadingBidderID else { return false }
+        auction.passedPlayerIDs.insert(playerID)
+        let remaining = players.filter { !$0.bankrupt && $0.id != auction.excludedPlayerID && $0.id != auction.leadingBidderID && !auction.passedPlayerIDs.contains($0.id) }
+        if remaining.isEmpty {
+            if let winnerID = auction.leadingBidderID, let index = players.firstIndex(where: { $0.id == winnerID }) {
+                players[index].cash -= auction.leadingBid
+                players[index].properties.insert(auction.spaceID)
+                append("\(players[index].name) won \(board[auction.spaceID].name) for $\(auction.leadingBid).")
+            } else { append("No bids for \(board[auction.spaceID].name).") }
+            self.auction = nil
+            pendingExtraRoll ? beginExtraRoll() : endTurn()
+            pendingExtraRoll = false
+        } else { self.auction = auction }
+        return true
+    }
+
+    @discardableResult
+    func mortgage(spaceID: Int, by playerID: UUID) -> Bool {
+        guard let player = player(withID: playerID), player.properties.contains(spaceID),
+              board[spaceID].isPurchasable, !mortgagedSpaceIDs.contains(spaceID),
+              buildingsBySpaceID[spaceID, default: 0] == 0 else { return false }
+        let group = StandardRules.colorSet(for: spaceID)
+        guard group.allSatisfy({ buildingsBySpaceID[$0, default: 0] == 0 }), let index = players.firstIndex(where: { $0.id == playerID }) else { return false }
+        players[index].cash += StandardRules.mortgageValue(for: board[spaceID])
+        mortgagedSpaceIDs.insert(spaceID)
+        append("\(players[index].name) mortgaged \(board[spaceID].name).")
+        return true
     }
 
     private func payJailFine() {

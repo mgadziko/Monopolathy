@@ -18,9 +18,11 @@ the app, rather than any model, is the authoritative rules engine.
 - Shuffled Chance and Community Chest deck state with tested action resolution
   for movement, payments, player-to-player card transfers, repairs, jail, and
   Get Out of Jail Free ownership.
+- Validated auction state for declined properties, plus mortgage state that
+  pays half the purchase price and blocks invalid repeat mortgages.
 - No built-in AI strategy and no remote LLM turns yet.
 
-The remaining standard-rules execution work includes auctions, mortgages,
+The remaining standard-rules execution work includes unmortgaging,
 houses/hotels, bankruptcy, trading, and the structured turn-proposal protocol.
 
 ## Build and test

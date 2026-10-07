@@ -148,9 +148,18 @@ enum PendingAction: Equatable {
     case gameOver(winner: UUID)
 }
 
+struct AuctionState: Equatable {
+    let spaceID: Int
+    let excludedPlayerID: UUID
+    var leadingBidderID: UUID?
+    var leadingBid: Int
+    var passedPlayerIDs: Set<UUID>
+}
+
 enum TurnPhase: String {
     case awaitingRoll = "Roll"
     case awaitingPurchase = "Purchase"
+    case auction = "Auction"
     case trading = "Trade"
     case resolvingAI = "AI"
     case gameOver = "Game Over"

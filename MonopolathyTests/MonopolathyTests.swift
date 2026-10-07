@@ -57,6 +57,33 @@ final class MonopolathyTests: XCTestCase {
         XCTAssertEqual(engine.players[0].cash, 1_700)
     }
 
+    func testDeclinedPropertyUsesValidatedAuction() {
+        let engine = GameEngine(dice: { (3, 3) })
+        engine.start(endpoints: fourPlayers)
+        XCTAssertTrue(engine.submit(.rollDice))
+        XCTAssertTrue(engine.submit(.declineProperty))
+        XCTAssertEqual(engine.phase, .auction)
+        let bidder = engine.players[1]
+        XCTAssertTrue(engine.placeAuctionBid(75, by: bidder.id))
+        XCTAssertFalse(engine.placeAuctionBid(75, by: engine.players[2].id))
+        XCTAssertTrue(engine.passAuction(by: engine.players[2].id))
+        XCTAssertTrue(engine.passAuction(by: engine.players[3].id))
+        XCTAssertTrue(engine.players[1].properties.contains(6))
+        XCTAssertEqual(engine.players[1].cash, 1_425)
+    }
+
+    func testMortgageAddsHalfPriceAndCannotRepeat() {
+        let engine = GameEngine(dice: { (3, 3) })
+        engine.start(endpoints: fourPlayers)
+        XCTAssertTrue(engine.submit(.rollDice))
+        XCTAssertTrue(engine.submit(.buyProperty))
+        let owner = engine.players[0]
+        XCTAssertTrue(engine.mortgage(spaceID: 6, by: owner.id))
+        XCTAssertTrue(engine.mortgagedSpaceIDs.contains(6))
+        XCTAssertEqual(engine.players[0].cash, 1_450)
+        XCTAssertFalse(engine.mortgage(spaceID: 6, by: owner.id))
+    }
+
     func testThreeConsecutiveDoublesSendsPlayerToJail() {
         let sequence = RollSequence([(1, 1), (1, 1), (1, 1)])
         let engine = GameEngine(dice: { sequence.next() })
