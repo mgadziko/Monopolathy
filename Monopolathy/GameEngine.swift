@@ -295,16 +295,22 @@ final class GameEngine: ObservableObject {
 
     @discardableResult
     func sellBuilding(on spaceID: Int, by playerID: UUID) -> Bool {
+        guard canSellBuilding(on: spaceID, by: playerID), let index = players.firstIndex(where: { $0.id == playerID }) else { return false }
+        let current = buildingsBySpaceID[spaceID, default: 0]
+        buildingsBySpaceID[spaceID] = current - 1
+        players[index].cash += board[spaceID].houseCost / 2
+        append("\(players[index].name) sold \(current == 5 ? "a hotel" : "a house") on \(board[spaceID].name).")
+        return true
+    }
+
+    func canSellBuilding(on spaceID: Int, by playerID: UUID) -> Bool {
         guard let player = player(withID: playerID), player.properties.contains(spaceID),
               let group = board[spaceID].colorGroup else { return false }
         let spaces = board.filter { $0.kind == .property && $0.colorGroup == group }.map(\.id)
         let current = buildingsBySpaceID[spaceID, default: 0]
         let maximum = spaces.map { buildingsBySpaceID[$0, default: 0] }.max() ?? 0
-        guard current > 0, current == maximum, let index = players.firstIndex(where: { $0.id == playerID }) else { return false }
+        guard current > 0, current == maximum else { return false }
         if current == 5 && availableHouses < 4 { return false }
-        buildingsBySpaceID[spaceID] = current - 1
-        players[index].cash += board[spaceID].houseCost / 2
-        append("\(players[index].name) sold \(current == 5 ? "a hotel" : "a house") on \(board[spaceID].name).")
         return true
     }
 

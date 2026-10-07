@@ -243,6 +243,18 @@ final class MonopolathyTests: XCTestCase {
         XCTAssertEqual(engine.players[1].cash, 1_400)
     }
 
+    func testAssetCoordinatorAppliesOnlyValidatedMortgage() async throws {
+        let engine = GameEngine()
+        engine.start(endpoints: fourPlayers)
+        let player = engine.players[0]
+        engine.grantPropertiesForTesting([6], to: player.id)
+        let decision = try await AssetCoordinator().requestDecision(engine: engine, player: player, transport: FixedTransport(reply: "{\"action\":\"mortgage\",\"property_id\":6}"))
+        XCTAssertEqual(decision, .mortgage(6))
+        XCTAssertTrue(engine.mortgagedSpaceIDs.contains(6))
+        XCTAssertEqual(engine.players[0].cash, 1_550)
+        XCTAssertThrowsError(try AssetProtocol.decision(from: "{\"action\":\"build\"}"))
+    }
+
     func testThreeConsecutiveDoublesSendsPlayerToJail() {
         let sequence = RollSequence([(1, 1), (1, 1), (1, 1)])
         let cards = [MonopolyCard(id: "test-chest", deck: .communityChest, effect: .collect(0))]

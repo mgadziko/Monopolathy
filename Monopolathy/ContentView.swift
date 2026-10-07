@@ -12,6 +12,7 @@ struct ContentView: View {
     @State private var isAskingPlayer = false
     @State private var isAutoPlaying = false
     @State private var tradeWindowPlayerID: UUID?
+    @State private var assetWindowPlayerID: UUID?
     @State private var playerTurnStatus: String?
 
     private var activeEndpoints: [PlayerEndpoint] {
@@ -86,6 +87,7 @@ struct ContentView: View {
                 Button {
                     game.start(endpoints: slots.compactMap(\.endpoint))
                     tradeWindowPlayerID = nil
+                    assetWindowPlayerID = nil
                     beginAutomaticPlay()
                 } label: { Label("Start Game", systemImage: "play.fill") }
                     .buttonStyle(.borderedProminent).disabled(!canStart)
@@ -141,6 +143,7 @@ struct ContentView: View {
                 Button("New Game") {
                     isAutoPlaying = false
                     tradeWindowPlayerID = nil
+                    assetWindowPlayerID = nil
                     game.returnToLobby()
                 }
             }
@@ -197,6 +200,7 @@ struct ContentView: View {
                 guard await askNextAuctionBidder() else { break }
             } else {
                 guard game.phase != .trading, game.phase != .gameOver else { break }
+                guard await manageAssetsIfNeeded() else { break }
                 guard await negotiateTradeIfNeeded() else { break }
                 guard await askCurrentPlayer() else { break }
             }
@@ -265,6 +269,27 @@ struct ContentView: View {
             playerTurnStatus = error.localizedDescription
             return false
         }
+    }
+
+    @MainActor private func manageAssetsIfNeeded() async -> Bool {
+        guard let player = game.currentPlayer else { return false }
+        guard assetWindowPlayerID != player.id else { return true }
+        assetWindowPlayerID = player.id
+        guard player.endpoint.hermesProfileName != nil else { playerTurnStatus = "ChatGPT connection is not configured yet."; return false }
+        for _ in 0..<40 {
+            isAskingPlayer = true
+            playerTurnStatus = "Waiting for \(player.name)'s asset decision…"
+            defer { isAskingPlayer = false }
+            do {
+                let decision = try await AssetCoordinator().requestDecision(engine: game, player: player, transport: HermesTurnTransport(endpoint: player.endpoint))
+                if decision == .done { return true }
+            } catch {
+                playerTurnStatus = error.localizedDescription
+                return false
+            }
+        }
+        playerTurnStatus = "Asset-management limit reached for \(player.name)."
+        return false
     }
 }
 

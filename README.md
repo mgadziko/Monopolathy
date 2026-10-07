@@ -26,6 +26,9 @@ the app, rather than any model, is the authoritative rules engine.
   bid.
 - Full-set, unmortgaged-only house and hotel construction with even-building
   and selling enforcement, finite bank inventory, and mortgage restrictions.
+- Before each turn, the player endpoint may make validated asset-management
+  decisions—build, sell a building, mortgage, or unmortgage—until it replies
+  that it is finished. The app never chooses those actions for it.
 - Validated cash/property trades, including the immediate interest required on
   transferred mortgaged property, and creditor/bank bankruptcy asset handling.
   Once per turn, a player may make one exact offer; its recipient separately

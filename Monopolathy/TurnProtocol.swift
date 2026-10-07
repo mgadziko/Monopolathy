@@ -367,6 +367,85 @@ final class TradeCoordinator {
     }
 }
 
+struct AssetSnapshot: Codable, Equatable {
+    let playerName: String
+    let cash: Int
+    let propertyNames: [Int: String]
+    let ownedProperties: [Int]
+    let mortgagedProperties: [Int]
+    let buildings: [Int: Int]
+    let buildableProperties: [Int]
+    let sellableProperties: [Int]
+
+    @MainActor init(engine: GameEngine, player: Player) {
+        playerName = player.name
+        cash = player.cash
+        propertyNames = Dictionary(uniqueKeysWithValues: engine.board.filter(\.isPurchasable).map { ($0.id, $0.name) })
+        ownedProperties = player.properties.sorted()
+        mortgagedProperties = player.properties.filter(engine.mortgagedSpaceIDs.contains).sorted()
+        buildings = Dictionary(uniqueKeysWithValues: player.properties.map { ($0, engine.buildingsBySpaceID[$0, default: 0]) })
+        buildableProperties = player.properties.filter { engine.canBuild(on: $0, by: player.id) }.sorted()
+        sellableProperties = player.properties.filter { engine.canSellBuilding(on: $0, by: player.id) }.sorted()
+    }
+}
+
+enum AssetDecision: Equatable { case done, mortgage(Int), unmortgage(Int), build(Int), sellBuilding(Int) }
+private struct ProposedAssetAction: Decodable { let action: String; let propertyID: Int?; enum CodingKeys: String, CodingKey { case action; case propertyID = "property_id" } }
+
+enum AssetProtocolError: LocalizedError, Equatable {
+    case malformedReply, illegalAction(String)
+    var errorDescription: String? { switch self { case .malformedReply: "The asset-management response was not valid JSON."; case let .illegalAction(action): "The asset-management action is not legal: \(action)." } }
+}
+
+enum AssetProtocol {
+    static func prompt(for snapshot: AssetSnapshot) -> String {
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+        let state = String(data: (try? encoder.encode(snapshot)) ?? Data(), encoding: .utf8) ?? "{}"
+        return """
+        You are \(snapshot.playerName), playing standard-rules Monopoly. Before rolling, you may make one legal asset-management action or finish. Strategy is entirely yours; the game validates everything.
+
+        Asset state JSON:
+        \(state)
+
+        Reply with exactly one JSON object and no Markdown or explanation:
+        {"action":"done"}
+        {"action":"mortgage","property_id":id}
+        {"action":"unmortgage","property_id":id}
+        {"action":"build","property_id":id}
+        {"action":"sell_building","property_id":id}
+        """
+    }
+
+    static func decision(from reply: String) throws -> AssetDecision {
+        guard let proposal = try? JSONDecoder().decode(ProposedAssetAction.self, from: Data(reply.trimmingCharacters(in: .whitespacesAndNewlines).utf8)) else { throw AssetProtocolError.malformedReply }
+        switch proposal.action {
+        case "done": return .done
+        case "mortgage", "unmortgage", "build", "sell_building":
+            guard let id = proposal.propertyID else { throw AssetProtocolError.illegalAction(proposal.action) }
+            switch proposal.action { case "mortgage": return .mortgage(id); case "unmortgage": return .unmortgage(id); case "build": return .build(id); default: return .sellBuilding(id) }
+        default: throw AssetProtocolError.illegalAction(proposal.action)
+        }
+    }
+}
+
+@MainActor
+final class AssetCoordinator {
+    func requestDecision(engine: GameEngine, player: Player, transport: any PlayerTurnTransport) async throws -> AssetDecision {
+        let reply = try await transport.respond(to: AssetProtocol.prompt(for: AssetSnapshot(engine: engine, player: player)))
+        let decision = try AssetProtocol.decision(from: reply)
+        let applied: Bool
+        switch decision {
+        case .done: return .done
+        case let .mortgage(id): applied = engine.mortgage(spaceID: id, by: player.id)
+        case let .unmortgage(id): applied = engine.unmortgage(spaceID: id, by: player.id)
+        case let .build(id): applied = engine.buyBuilding(on: id, by: player.id)
+        case let .sellBuilding(id): applied = engine.sellBuilding(on: id, by: player.id)
+        }
+        guard applied else { throw AssetProtocolError.illegalAction("engine validation failed") }
+        return decision
+    }
+}
+
 enum HermesTurnTransportError: LocalizedError {
     case profileUnavailable
     case invalidResponse
