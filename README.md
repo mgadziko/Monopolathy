@@ -17,7 +17,9 @@ the app, rather than any model, is the authoritative rules engine.
   the finite 32-house / 12-hotel bank supply.
 - Shuffled Chance and Community Chest deck state with tested action resolution
   for movement, payments, player-to-player card transfers, repairs, jail, and
-  Get Out of Jail Free ownership.
+  Get Out of Jail Free ownership. Card-directed movement resolves its
+  destination normally, including purchase decisions, chained card spaces,
+  double railroad rent, and the utility card's fresh rent roll.
 - Validated auction state for declined properties, plus mortgage state that
   pays half the purchase price and blocks invalid repeat mortgages. Auctions
   follow the standard rule that the player who declined the property may still
