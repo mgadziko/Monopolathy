@@ -112,6 +112,9 @@ struct PlayerConfig: Identifiable, Equatable {
 struct Player: Identifiable, Codable, Equatable {
     let id: UUID
     var name: String
+    /// The selected decision-maker. This is kept separate from `name` so the
+    /// table never has to infer a network target from display text.
+    var endpoint: PlayerEndpoint
     var kind: PlayerKind
     var token: String
     var position: Int

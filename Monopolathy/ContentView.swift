@@ -9,6 +9,8 @@ struct ContentView: View {
         PlayerSlot(id: 3, endpoint: nil, token: "Ship")
     ]
     @State private var availability = Dictionary(uniqueKeysWithValues: PlayerEndpoint.allCases.map { ($0, PlayerAvailability.checking) })
+    @State private var isAskingPlayer = false
+    @State private var playerTurnStatus: String?
 
     private var activeEndpoints: [PlayerEndpoint] {
         PlayerEndpoint.allCases.filter { availability[$0]?.isAvailable == true }
@@ -109,11 +111,21 @@ struct ContentView: View {
                     ScrollView { LazyVStack(alignment: .leading, spacing: 6) { ForEach(game.log) { Text($0.text).font(.callout) } } }
                 }.frame(maxWidth: .infinity, minHeight: 400, alignment: .topLeading)
             }
+            if let playerTurnStatus {
+                Text(playerTurnStatus).foregroundStyle(.secondary)
+            }
             HStack {
                 ForEach(game.legalActions, id: \.self) { action in
                     Button(actionTitle(action)) { game.submit(action) }.buttonStyle(.borderedProminent)
                 }
                 Spacer()
+                Button {
+                    Task { await askCurrentPlayer() }
+                } label: {
+                    Label(isAskingPlayer ? "Waiting for Player…" : "Ask Current Player", systemImage: "person.crop.circle.badge.play")
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isAskingPlayer || game.phase == .auction || game.phase == .trading || game.phase == .gameOver)
                 Button("New Game") { game.returnToLobby() }
             }
         }.padding(28)
@@ -130,6 +142,23 @@ struct ContentView: View {
         await withTaskGroup(of: (PlayerEndpoint, PlayerAvailability).self) { group in
             for endpoint in PlayerEndpoint.allCases { group.addTask { (endpoint, await EndpointProbe.check(endpoint)) } }
             for await (endpoint, result) in group { availability[endpoint] = result }
+        }
+    }
+
+    @MainActor private func askCurrentPlayer() async {
+        guard let player = game.currentPlayer else { return }
+        guard player.endpoint.hermesProfileName != nil else {
+            playerTurnStatus = "ChatGPT connection is not configured yet."
+            return
+        }
+        isAskingPlayer = true
+        playerTurnStatus = "Waiting for \(player.name)'s legal move…"
+        defer { isAskingPlayer = false }
+        do {
+            let action = try await TurnCoordinator().playTurn(engine: game, transport: HermesTurnTransport(endpoint: player.endpoint))
+            playerTurnStatus = "\(player.name) chose \(actionTitle(action))."
+        } catch {
+            playerTurnStatus = error.localizedDescription
         }
     }
 }

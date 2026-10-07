@@ -68,7 +68,7 @@ final class GameEngine: ObservableObject {
         }
         let tokens = ["car", "hat", "dog", "ship"]
         players = unique.enumerated().map { index, endpoint in
-            Player(id: UUID(), name: endpoint.displayName, kind: .ai, token: tokens[index], position: 0, cash: startingCash, properties: [], inJailTurns: 0, getOutOfJailFreeCards: 0, bankrupt: false)
+            Player(id: UUID(), name: endpoint.displayName, endpoint: endpoint, kind: .ai, token: tokens[index], position: 0, cash: startingCash, properties: [], inJailTurns: 0, getOutOfJailFreeCards: 0, bankrupt: false)
         }
         currentPlayerIndex = 0
         phase = .awaitingRoll

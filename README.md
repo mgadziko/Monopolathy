@@ -29,11 +29,17 @@ the app, rather than any model, is the authoritative rules engine.
   rejected before they can touch game state.
 - A tested turn coordinator that keeps network transports separate from the
   rules engine; transports return text only and cannot invoke game tools.
-- No built-in AI strategy and no remote LLM turns yet.
+- A narrow Hermes turn transport reads the selected profile's configured model
+  endpoint and sends it only the current JSON turn prompt. It cannot use
+  Hermes tools, terminals, memories, or alter the rules engine directly.
+- At the table, **Ask Current Player** makes one live, validated decision for
+  the active Hermes player. This deliberately pauses for auctions and trades
+  until their multi-player proposal protocol is complete.
+- No built-in AI strategy and no ChatGPT connection yet.
 
-The remaining work is live Hermes transport wiring, an explicit user-authorized
-ChatGPT sign-in flow, and final rule-edge-case auditing. No endpoint will
-receive general tool access.
+The remaining work is a user-authorized ChatGPT sign-in flow, auction/trade
+proposal protocols, continuous play controls, and final rule-edge-case
+auditing. No endpoint will receive general tool access.
 
 ## Build and test
 
