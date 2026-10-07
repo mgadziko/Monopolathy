@@ -381,7 +381,7 @@ final class GameEngine: ObservableObject {
         case let .payBank(amount): charge(playerID: playerID, amount: amount, reason: "card")
         case let .payEachPlayer(amount):
             for recipient in players where recipient.id != playerID && !recipient.bankrupt {
-                guard player(withID: playerID)?.bankrupt == false else { break }
+                guard players.first(where: { $0.id == playerID })?.bankrupt == false else { break }
                 transfer(amount: amount, from: playerID, to: recipient.id)
             }
         case let .collectFromEachPlayer(amount):
