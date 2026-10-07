@@ -36,7 +36,7 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: 24) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Monopolathy").font(.system(size: 44, weight: .bold, design: .rounded))
+                    Text("Monopathy").font(.system(size: 44, weight: .bold, design: .rounded))
                     Text("A standard-rules Monopoly table for four LAN decision-makers.")
                         .font(.title3).foregroundStyle(.secondary)
                 }
@@ -101,15 +101,13 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
                 VStack(alignment: .leading) {
-                    Text("Monopolathy").font(.largeTitle.bold())
+                    Text("Monopathy").font(.largeTitle.bold())
                     Text("Current player: \(game.currentPlayer?.name ?? "—") • \(game.phase.rawValue)").foregroundStyle(.secondary)
                 }
                 Spacer()
                 if let roll = game.lastRoll { Text("Last roll: \(roll.0) + \(roll.1)").monospacedDigit() }
             }
             HStack(alignment: .top, spacing: 20) {
-                board
-                    .frame(minWidth: 560, maxWidth: .infinity)
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Players").font(.headline)
                     ForEach(game.players) { player in
@@ -123,6 +121,8 @@ struct ContentView: View {
                     ScrollView { LazyVStack(alignment: .leading, spacing: 6) { ForEach(game.log) { Text($0.text).font(.callout) } } }
                         .frame(minHeight: 250)
                 }.frame(width: 340, alignment: .leading)
+                board
+                    .frame(minWidth: 560, maxWidth: .infinity)
             }
             if let playerTurnStatus {
                 Text(playerTurnStatus).foregroundStyle(.secondary)
@@ -179,7 +179,7 @@ struct ContentView: View {
 
     private var boardDashboard: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("MONOPOLATHY").font(.system(size: 21, weight: .bold, design: .rounded))
+            Text("MONOPATHY").font(.system(size: 21, weight: .bold, design: .rounded))
             Text("\(game.phase.rawValue) • \(game.currentPlayer?.name ?? "—")")
                 .font(.callout).foregroundStyle(.secondary)
             Text("Bank: \(game.availableHouses) houses • \(game.availableHotels) hotels")
@@ -269,7 +269,7 @@ struct ContentView: View {
 
     private func boardColor(for spaceID: Int) -> Color {
         switch spaceID {
-        case 1, 3: .brown
+        case 1, 3: .purple
         case 6, 8, 9: .cyan
         case 11, 13, 14: .pink
         case 16, 18, 19: .orange
@@ -278,7 +278,8 @@ struct ContentView: View {
         case 31, 32, 34: .green
         case 37, 39: .blue
         case 5, 15, 25, 35: .black
-        case 12, 28: .purple
+        case 12: .purple
+        case 28: .brown
         default: .gray
         }
     }
