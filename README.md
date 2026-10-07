@@ -32,7 +32,7 @@ the app, rather than any model, is the authoritative rules engine.
   decisions—build, sell a building, mortgage, or unmortgage—until it replies
   that it is finished. The app never chooses those actions for it.
 - If a payment makes a player insolvent, play pauses for that player to sell
-  buildings or mortgage eligible property. Only when it replies that it is
+  buildings, mortgage eligible property, or make one exact trade offer. Only when it replies that it is
   finished does the engine either resume the interrupted turn or process a
   standard bankruptcy; it never eliminates a player merely for a temporary
   negative balance.

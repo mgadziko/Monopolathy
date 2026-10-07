@@ -340,7 +340,8 @@ final class GameEngine: ObservableObject {
     func canExecuteTrade(_ offer: TradeOffer) -> Bool {
         guard offer.fromPlayerID != offer.toPlayerID, offer.fromCash >= 0, offer.toCash >= 0,
               let from = player(withID: offer.fromPlayerID), let to = player(withID: offer.toPlayerID),
-              !from.bankrupt, !to.bankrupt, from.cash >= offer.fromCash, to.cash >= offer.toCash,
+              !from.bankrupt, !to.bankrupt,
+              (from.cash >= offer.fromCash || (outstandingDebt?.playerID == from.id && offer.fromCash == 0)), to.cash >= offer.toCash,
               offer.fromProperties.isSubset(of: from.properties), offer.toProperties.isSubset(of: to.properties) else { return false }
         let traded = offer.fromProperties.union(offer.toProperties)
         return traded.allSatisfy { buildingsBySpaceID[$0, default: 0] == 0 }

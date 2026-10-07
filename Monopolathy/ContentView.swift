@@ -415,6 +415,25 @@ struct ContentView: View {
             playerTurnStatus = "ChatGPT connection is not configured yet."
             return false
         }
+        isAskingPlayer = true
+        playerTurnStatus = "Waiting for \(player.name)'s debt-settlement trade…"
+        do {
+            _ = try await TradeCoordinator().negotiate(
+                engine: game,
+                proposer: player,
+                proposerTransport: HermesTurnTransport(endpoint: player.endpoint),
+                recipientTransport: { HermesTurnTransport(endpoint: $0) }
+            )
+            if game.playerNeedingDebtResolution?.cash ?? 0 >= 0 {
+                isAskingPlayer = false
+                return game.resolveOutstandingDebt(by: player.id)
+            }
+        } catch {
+            isAskingPlayer = false
+            playerTurnStatus = error.localizedDescription
+            return false
+        }
+        isAskingPlayer = false
         for _ in 0..<40 {
             isAskingPlayer = true
             playerTurnStatus = "Waiting for \(player.name) to settle debt…"

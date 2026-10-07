@@ -282,7 +282,7 @@ enum TradeProtocol {
         encoder.outputFormatting = [.sortedKeys]
         let state = String(data: (try? encoder.encode(snapshot)) ?? Data(), encoding: .utf8) ?? "{}"
         return """
-        You are \(snapshot.proposerName), playing standard-rules Monopoly. Before your turn, you may make exactly one voluntary trade offer, or make no offer. Strategy is entirely yours. The game will validate ownership, cash, unimproved properties, and mortgage-transfer costs.
+        You are \(snapshot.proposerName), playing standard-rules Monopoly. If your cash is negative, this is your opportunity to raise funds before bankruptcy; otherwise, before your turn you may make exactly one voluntary trade offer, or make no offer. Strategy is entirely yours. The game will validate ownership, cash, unimproved properties, and mortgage-transfer costs.
 
         Table state JSON:
         \(state)
