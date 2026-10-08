@@ -192,6 +192,8 @@ enum AuctionProtocol {
         return """
         You are \(snapshot.playerName), participating in a standard-rules Monopoly auction. Decide strategy yourself. You may bid any whole-dollar amount from \(snapshot.minimumBid) through \(snapshot.playerCash), or pass permanently. Do not invent other actions.
 
+        Make a decisive valuation-based choice. If you bid, choose the highest price you would genuinely be willing to pay for this property now; do not mechanically raise the current bid by $1 merely to extend the auction. Another player can outbid you and you will be asked again, so a bid should reflect your actual valuation. Pass if the property is not worth at least the minimum bid to you. Your answer does not set a sealed maximum or constrain later bids; it is only your current standard-rules bid.
+
         Auction state JSON:
         \(state)
 
@@ -434,6 +436,47 @@ struct AssetSnapshot: Codable, Equatable {
         unmortgageableProperties = player.properties.filter { engine.mortgagedSpaceIDs.contains($0) }.sorted()
         availableHouses = engine.availableHouses
         availableHotels = engine.availableHotels
+    }
+
+    var hasOptionalActions: Bool {
+        !buildableProperties.isEmpty || !sellableProperties.isEmpty ||
+            !mortgageableProperties.isEmpty || !unmortgageableProperties.isEmpty
+    }
+}
+
+enum OptionalDecisionPolicy {
+    @MainActor
+    static func hasTradeOpportunity(for proposer: Player, in engine: GameEngine) -> Bool {
+        guard !proposer.bankrupt else { return false }
+        let proposerHasCash = proposer.cash > 0
+        let proposerHasProperties = !proposer.properties.isEmpty
+        guard proposerHasCash || proposerHasProperties else { return false }
+
+        return engine.players.contains { counterparty in
+            guard counterparty.id != proposer.id, !counterparty.bankrupt else { return false }
+            let counterpartyHasCash = counterparty.cash > 0
+            let counterpartyHasProperties = !counterparty.properties.isEmpty
+            return (proposerHasCash && counterpartyHasProperties) ||
+                (proposerHasProperties && (counterpartyHasCash || counterpartyHasProperties))
+        }
+    }
+
+    static func shouldContinueAfterOptionalFailure(_ error: Error) -> Bool {
+        (error as? URLError)?.code == .timedOut
+    }
+
+    /// A voluntary trade is not required to advance the turn.  Keep a bad
+    /// model proposal from freezing the table, while preserving a real engine
+    /// failure as a visible stop condition.
+    static func shouldContinueAfterOptionalTradeFailure(_ error: Error) -> Bool {
+        if shouldContinueAfterOptionalFailure(error) { return true }
+        guard let error = error as? TradeCoordinatorError else { return false }
+        if case .proposalRejected = error { return true }
+        return false
+    }
+
+    static func shouldContinueAfterOptionalAssetFailure(_ error: Error) -> Bool {
+        shouldContinueAfterOptionalFailure(error) || error is AssetProtocolError
     }
 }
 

@@ -26,6 +26,43 @@ final class MonopolathyTests: XCTestCase {
         XCTAssertEqual(templateArguments["enable_thinking"], false)
     }
 
+    func testOptionalAssetDecisionIsSkippedWithoutLegalAssetAction() {
+        let engine = GameEngine()
+        engine.start(endpoints: fourPlayers)
+        XCTAssertFalse(AssetSnapshot(engine: engine, player: engine.players[0]).hasOptionalActions)
+
+        engine.grantPropertiesForTesting([1], to: engine.players[0].id)
+        XCTAssertTrue(AssetSnapshot(engine: engine, player: engine.players[0]).hasOptionalActions)
+    }
+
+    func testOptionalTradeIsSkippedUntilAnExchangeIsPossible() {
+        let engine = GameEngine()
+        engine.start(endpoints: fourPlayers)
+        let proposer = engine.players[0]
+
+        XCTAssertFalse(OptionalDecisionPolicy.hasTradeOpportunity(for: proposer, in: engine))
+        engine.grantPropertiesForTesting([1], to: engine.players[1].id)
+        XCTAssertTrue(OptionalDecisionPolicy.hasTradeOpportunity(for: proposer, in: engine))
+    }
+
+    func testOptionalDecisionTimeoutContinuesButOtherErrorsDoNot() {
+        XCTAssertTrue(OptionalDecisionPolicy.shouldContinueAfterOptionalFailure(URLError(.timedOut)))
+        XCTAssertFalse(OptionalDecisionPolicy.shouldContinueAfterOptionalFailure(URLError(.cannotConnectToHost)))
+    }
+
+    func testRejectedOptionalTradeProposalContinuesButEngineFailureDoesNot() {
+        XCTAssertTrue(OptionalDecisionPolicy.shouldContinueAfterOptionalTradeFailure(
+            TradeCoordinatorError.proposalRejected(.illegalProposal("engine validation failed"))
+        ))
+        XCTAssertTrue(OptionalDecisionPolicy.shouldContinueAfterOptionalTradeFailure(URLError(.timedOut)))
+        XCTAssertFalse(OptionalDecisionPolicy.shouldContinueAfterOptionalTradeFailure(TradeCoordinatorError.engineRejected))
+    }
+
+    func testRejectedOptionalAssetDecisionContinuesAfterValidation() {
+        XCTAssertTrue(OptionalDecisionPolicy.shouldContinueAfterOptionalAssetFailure(AssetProtocolError.illegalAction("engine validation failed")))
+        XCTAssertFalse(OptionalDecisionPolicy.shouldContinueAfterOptionalAssetFailure(URLError(.cannotConnectToHost)))
+    }
+
     func testEndpointProbeAcceptsGGUFPathForConfiguredHermesAlias() {
         let serverModel = EndpointProbe.ModelList.Model(
             id: "/mnt/ssd894/Models/Qwen3.8-27B/Qwen3.8-27B-Q4_K_M.gguf",
@@ -398,6 +435,20 @@ final class MonopolathyTests: XCTestCase {
         XCTAssertEqual(decision, .bid(75))
         XCTAssertEqual(engine.auction?.leadingBidderID, bidder.id)
         XCTAssertThrowsError(try AuctionProtocol.decision(from: "{\"action\":\"bid\",\"amount\":0}", minimumBid: 76, availableCash: bidder.cash))
+    }
+
+    func testAuctionPromptAsksForAValuationBasedBidWithoutChangingTheLegalRange() {
+        let engine = GameEngine(dice: { (3, 3) })
+        engine.start(endpoints: fourPlayers)
+        XCTAssertTrue(engine.submit(.rollDice))
+        XCTAssertTrue(engine.submit(.declineProperty))
+        XCTAssertTrue(engine.placeAuctionBid(200, by: engine.players[1].id))
+        let snapshot = AuctionSnapshot(engine: engine, bidder: engine.players[2])
+
+        let prompt = AuctionProtocol.prompt(for: snapshot)
+        XCTAssertTrue(prompt.contains("highest price you would genuinely be willing to pay"))
+        XCTAssertTrue(prompt.contains("from 201 through 1500"))
+        XCTAssertTrue(prompt.contains("does not set a sealed maximum"))
     }
 
     func testAuctionCoordinatorRetriesInvalidBid() async throws {

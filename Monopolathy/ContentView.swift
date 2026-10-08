@@ -436,6 +436,7 @@ struct ContentView: View {
         guard let proposer = game.currentPlayer else { return false }
         guard tradeWindowPlayerID != proposer.id else { return true }
         tradeWindowPlayerID = proposer.id
+        guard OptionalDecisionPolicy.hasTradeOpportunity(for: proposer, in: game) else { return true }
         guard proposer.endpoint.hermesProfileName != nil else {
             playerTurnStatus = "ChatGPT connection is not configured yet."
             return false
@@ -457,6 +458,11 @@ struct ContentView: View {
             }
             return true
         } catch {
+            if OptionalDecisionPolicy.shouldContinueAfterOptionalTradeFailure(error) {
+                let outcome = OptionalDecisionPolicy.shouldContinueAfterOptionalFailure(error) ? "timed out" : "was rejected"
+                playerTurnStatus = "\(proposer.name)'s optional trade proposal \(outcome); continuing play."
+                return true
+            }
             playerTurnStatus = error.localizedDescription
             return false
         }
@@ -473,6 +479,7 @@ struct ContentView: View {
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.sortedKeys]
             let snapshot = AssetSnapshot(engine: game, player: currentPlayer)
+            guard snapshot.hasOptionalActions else { return true }
             let state = String(data: (try? encoder.encode(snapshot)) ?? Data(), encoding: .utf8) ?? ""
             guard seenAssetStates.insert(state).inserted else {
                 playerTurnStatus = "\(player.name) repeated an optional asset state; continuing play."
@@ -485,6 +492,11 @@ struct ContentView: View {
                 let decision = try await AssetCoordinator().requestDecision(engine: game, player: currentPlayer, transport: HermesTurnTransport(endpoint: currentPlayer.endpoint))
                 if decision == .done { return true }
             } catch {
+                if OptionalDecisionPolicy.shouldContinueAfterOptionalAssetFailure(error) {
+                    let outcome = OptionalDecisionPolicy.shouldContinueAfterOptionalFailure(error) ? "timed out" : "was rejected"
+                    playerTurnStatus = "\(player.name)'s optional asset decision \(outcome); continuing play."
+                    return true
+                }
                 playerTurnStatus = error.localizedDescription
                 return false
             }
