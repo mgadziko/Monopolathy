@@ -5,6 +5,45 @@ import XCTest
 final class MonopolathyTests: XCTestCase {
     private let fourPlayers: [PlayerEndpoint] = [.hermesLocal, .whiteLotus, .blackLotus, .greenLotus]
 
+    func testLocalHermesEndpointUsesPortableOrganonDisplayLabel() {
+        XCTAssertEqual(PlayerEndpoint.hermesLocal.displayName, "hermes-organon")
+        XCTAssertEqual(PlayerEndpoint.hermesLocal.hermesProfileName, "local")
+        XCTAssertEqual(PlayerEndpoint.hermesLocal.rawValue, "hermes-local")
+    }
+
+    func testHermesTurnRequestDisablesThinkingForStructuredTurn() throws {
+        let request = HermesTurnTransport.Request(
+            model: "qwen3.8-27b-q4km",
+            messages: [.init(role: "user", content: "Return one JSON action.")],
+            maxTokens: 128,
+            temperature: 0,
+            chatTemplateKwargs: ["enable_thinking": false]
+        )
+        let data = try JSONEncoder().encode(request)
+        let object = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let templateArguments = try XCTUnwrap(object["chat_template_kwargs"] as? [String: Bool])
+
+        XCTAssertEqual(templateArguments["enable_thinking"], false)
+    }
+
+    func testEndpointProbeAcceptsGGUFPathForConfiguredHermesAlias() {
+        let serverModel = EndpointProbe.ModelList.Model(
+            id: "/mnt/ssd894/Models/Qwen3.8-27B/Qwen3.8-27B-Q4_K_M.gguf",
+            aliases: ["/mnt/ssd894/Models/Qwen3.8-27B/Qwen3.8-27B-Q4_K_M.gguf"]
+        )
+
+        XCTAssertTrue(EndpointProbe.modelMatches(serverModel, configuredModel: "qwen3.8-27b-q4km"))
+    }
+
+    func testEndpointProbeRejectsDifferentGGUFModel() {
+        let serverModel = EndpointProbe.ModelList.Model(
+            id: "/srv/models/Qwen3.8-27B-Q4_K_M.gguf",
+            aliases: nil
+        )
+
+        XCTAssertFalse(EndpointProbe.modelMatches(serverModel, configuredModel: "qwen3.8-27b-q6k"))
+    }
+
     func testGameRequiresFourDistinctPlayerEndpoints() {
         let engine = GameEngine()
         engine.start(endpoints: [.hermesLocal, .whiteLotus, .blackLotus])
@@ -240,6 +279,21 @@ final class MonopolathyTests: XCTestCase {
         XCTAssertEqual(engine.currentPlayerIndex, 1)
     }
 
+    func testDebtWithoutLiquidationOptionsProceedsToBankruptcy() {
+        let cards = [MonopolyCard(id: "test-bank-payment", deck: .chance, effect: .payBank(50))]
+        let engine = GameEngine(dice: { (3, 4) }, deckOrder: cards)
+        engine.start(endpoints: fourPlayers)
+        let debtor = engine.players[0]
+        engine.setCashForTesting(10, for: debtor.id)
+
+        XCTAssertTrue(engine.submit(.rollDice))
+        XCTAssertEqual(engine.playerNeedingDebtResolution?.id, debtor.id)
+        XCTAssertTrue(engine.declareBankruptcyIfNoLiquidationOptions(by: debtor.id))
+        XCTAssertTrue(engine.players[0].bankrupt)
+        XCTAssertEqual(engine.players[0].cash, 0)
+        XCTAssertEqual(engine.currentPlayerIndex, 1)
+    }
+
     func testPlayerCanTradeToSettleDebtBeforeBankruptcy() {
         let cards = [MonopolyCard(id: "test-bank-payment", deck: .chance, effect: .payBank(50))]
         let engine = GameEngine(dice: { (3, 4) }, deckOrder: cards)
@@ -397,6 +451,26 @@ final class MonopolathyTests: XCTestCase {
         XCTAssertTrue(engine.mortgagedSpaceIDs.contains(6))
         XCTAssertEqual(engine.players[0].cash, 1_550)
         XCTAssertThrowsError(try AssetProtocol.decision(from: "{\"action\":\"build\"}"))
+    }
+
+    func testAssetCoordinatorRetriesRejectedAction() async throws {
+        let engine = GameEngine()
+        engine.start(endpoints: fourPlayers)
+        let player = engine.players[0]
+        engine.grantPropertiesForTesting([6], to: player.id)
+        let transport = ReplySequenceTransport(replies: [
+            "{\"action\":\"mortgage\",\"property_id\":999}",
+            "{\"action\":\"mortgage\",\"property_id\":6}"
+        ])
+
+        let decision = try await AssetCoordinator().requestDecision(engine: engine, player: player, transport: transport)
+        XCTAssertEqual(decision, .mortgage(6))
+        XCTAssertTrue(engine.mortgagedSpaceIDs.contains(6))
+    }
+
+    func testProtocolParsesJSONInsideMarkdownOrProse() throws {
+        XCTAssertEqual(try AssetProtocol.decision(from: "I will finish now.\n```json\n{\"action\":\"done\"}\n```"), .done)
+        XCTAssertEqual(try TurnProtocol.action(from: "Decision: {\"action\":\"roll_dice\"}", allowed: [.rollDice]), .rollDice)
     }
 
     func testThreeConsecutiveDoublesSendsPlayerToJail() {

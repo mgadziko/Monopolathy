@@ -22,10 +22,11 @@ final class AboutBoxController {
 
 private struct AboutBoxView: View {
     private var buildTimestamp: String {
-        let date = Bundle.main.executableURL.flatMap { try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate }
-        guard let date else { return "Version: Development" }
-        let formatter = DateFormatter(); formatter.dateFormat = "yyMMdd-HHmm"; formatter.timeZone = .current
-        return "Version: \(formatter.string(from: date))"
+        guard let timestamp = Bundle.main.object(forInfoDictionaryKey: "MonopathyBuildTimestamp") as? String,
+              !timestamp.isEmpty else {
+            return "Version: Development"
+        }
+        return "Version: \(timestamp)"
     }
 
     var body: some View {

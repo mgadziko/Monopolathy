@@ -1,5 +1,34 @@
 import Foundation
 
+/// Transports return model text, not trusted protocol frames. Accept the first
+/// complete JSON object so an otherwise valid decision survives a Markdown
+/// fence or a brief explanatory sentence.
+enum ProtocolJSON {
+    static func firstObjectData(from reply: String) -> Data? {
+        let bytes = Array(reply.utf8)
+        guard let start = bytes.firstIndex(of: 123) else { return nil } // {
+        var depth = 0
+        var inString = false
+        var escaped = false
+        for index in start..<bytes.endIndex {
+            let byte = bytes[index]
+            if inString {
+                if escaped { escaped = false }
+                else if byte == 92 { escaped = true } // \
+                else if byte == 34 { inString = false } // "
+                continue
+            }
+            if byte == 34 { inString = true; continue }
+            if byte == 123 { depth += 1 }
+            if byte == 125 {
+                depth -= 1
+                if depth == 0 { return Data(bytes[start...index]) }
+            }
+        }
+        return nil
+    }
+}
+
 struct TurnSnapshot: Codable, Equatable {
     struct PlayerState: Codable, Equatable, Identifiable {
         let id: UUID
@@ -70,7 +99,8 @@ enum TurnProtocol {
     }
 
     static func action(from reply: String, allowed: [GameAction]) throws -> GameAction {
-        guard let proposal = try? JSONDecoder().decode(ProposedAction.self, from: Data(reply.trimmingCharacters(in: .whitespacesAndNewlines).utf8)) else { throw TurnProtocolError.malformedReply }
+        guard let data = ProtocolJSON.firstObjectData(from: reply),
+              let proposal = try? JSONDecoder().decode(ProposedAction.self, from: data) else { throw TurnProtocolError.malformedReply }
         let named = Dictionary(uniqueKeysWithValues: allowed.map { (name(for: $0), $0) })
         guard let action = named[proposal.action] else { throw TurnProtocolError.illegalAction(proposal.action) }
         return action
@@ -173,7 +203,8 @@ enum AuctionProtocol {
     }
 
     static func decision(from reply: String, minimumBid: Int, availableCash: Int) throws -> AuctionDecision {
-        guard let proposal = try? JSONDecoder().decode(ProposedAuctionAction.self, from: Data(reply.trimmingCharacters(in: .whitespacesAndNewlines).utf8)) else { throw AuctionProtocolError.malformedReply }
+        guard let data = ProtocolJSON.firstObjectData(from: reply),
+              let proposal = try? JSONDecoder().decode(ProposedAuctionAction.self, from: data) else { throw AuctionProtocolError.malformedReply }
         switch proposal.action {
         case "pass": return .pass
         case "bid":
@@ -320,7 +351,8 @@ enum TradeProtocol {
     }
 
     @MainActor static func offer(from reply: String, proposer: Player, engine: GameEngine) throws -> TradeOffer? {
-        guard let proposal = try? JSONDecoder().decode(ProposedTradeAction.self, from: Data(reply.trimmingCharacters(in: .whitespacesAndNewlines).utf8)) else { throw TradeProtocolError.malformedReply }
+        guard let data = ProtocolJSON.firstObjectData(from: reply),
+              let proposal = try? JSONDecoder().decode(ProposedTradeAction.self, from: data) else { throw TradeProtocolError.malformedReply }
         guard proposal.action == "no_trade" || proposal.action == "propose_trade" else { throw TradeProtocolError.illegalProposal(proposal.action) }
         guard proposal.action == "propose_trade" else { return nil }
         guard let recipientID = proposal.toPlayerID, recipientID != proposer.id,
@@ -336,7 +368,8 @@ enum TradeProtocol {
     }
 
     static func accepted(from reply: String) throws -> Bool {
-        guard let response = try? JSONDecoder().decode(ProposedTradeResponse.self, from: Data(reply.trimmingCharacters(in: .whitespacesAndNewlines).utf8)) else { throw TradeProtocolError.malformedReply }
+        guard let data = ProtocolJSON.firstObjectData(from: reply),
+              let response = try? JSONDecoder().decode(ProposedTradeResponse.self, from: data) else { throw TradeProtocolError.malformedReply }
         switch response.action {
         case "accept": return true
         case "decline": return false
@@ -383,6 +416,8 @@ struct AssetSnapshot: Codable, Equatable {
     let buildings: [Int: Int]
     let buildableProperties: [Int]
     let sellableProperties: [Int]
+    let mortgageableProperties: [Int]
+    let unmortgageableProperties: [Int]
     let availableHouses: Int
     let availableHotels: Int
 
@@ -395,6 +430,8 @@ struct AssetSnapshot: Codable, Equatable {
         buildings = Dictionary(uniqueKeysWithValues: player.properties.map { ($0, engine.buildingsBySpaceID[$0, default: 0]) })
         buildableProperties = player.properties.filter { engine.canBuild(on: $0, by: player.id) }.sorted()
         sellableProperties = player.properties.filter { engine.canSellBuilding(on: $0, by: player.id) }.sorted()
+        mortgageableProperties = player.properties.filter { engine.canMortgage(spaceID: $0, by: player.id) }.sorted()
+        unmortgageableProperties = player.properties.filter { engine.mortgagedSpaceIDs.contains($0) }.sorted()
         availableHouses = engine.availableHouses
         availableHotels = engine.availableHotels
     }
@@ -409,14 +446,15 @@ enum AssetProtocolError: LocalizedError, Equatable {
 }
 
 enum AssetProtocol {
-    static func prompt(for snapshot: AssetSnapshot) -> String {
+    static func prompt(for snapshot: AssetSnapshot, correctingMalformedReply: Bool = false) -> String {
         let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
         let state = String(data: (try? encoder.encode(snapshot)) ?? Data(), encoding: .utf8) ?? "{}"
         let instruction = snapshot.cash < 0
             ? "You owe money. Sell buildings or mortgage legal property until you can pay; reply done only to declare bankruptcy or after restoring a non-negative balance."
             : "Before rolling, you may make one legal asset-management action or finish."
+        let correction = correctingMalformedReply ? "Your prior reply was not usable. Reply with one JSON object only—no Markdown or explanation." : ""
         return """
-        You are \(snapshot.playerName), playing standard-rules Monopoly. \(instruction) Strategy is entirely yours; the game validates everything.
+        You are \(snapshot.playerName), playing standard-rules Monopoly. \(instruction) \(correction) Strategy is entirely yours; the game validates everything.
 
         Asset state JSON:
         \(state)
@@ -431,7 +469,8 @@ enum AssetProtocol {
     }
 
     static func decision(from reply: String) throws -> AssetDecision {
-        guard let proposal = try? JSONDecoder().decode(ProposedAssetAction.self, from: Data(reply.trimmingCharacters(in: .whitespacesAndNewlines).utf8)) else { throw AssetProtocolError.malformedReply }
+        guard let data = ProtocolJSON.firstObjectData(from: reply),
+              let proposal = try? JSONDecoder().decode(ProposedAssetAction.self, from: data) else { throw AssetProtocolError.malformedReply }
         switch proposal.action {
         case "done": return .done
         case "mortgage", "unmortgage", "build", "sell_building":
@@ -445,18 +484,25 @@ enum AssetProtocol {
 @MainActor
 final class AssetCoordinator {
     func requestDecision(engine: GameEngine, player: Player, transport: any PlayerTurnTransport) async throws -> AssetDecision {
-        let reply = try await transport.respond(to: AssetProtocol.prompt(for: AssetSnapshot(engine: engine, player: player)))
-        let decision = try AssetProtocol.decision(from: reply)
-        let applied: Bool
-        switch decision {
-        case .done: return .done
-        case let .mortgage(id): applied = engine.mortgage(spaceID: id, by: player.id)
-        case let .unmortgage(id): applied = engine.unmortgage(spaceID: id, by: player.id)
-        case let .build(id): applied = engine.buyBuilding(on: id, by: player.id)
-        case let .sellBuilding(id): applied = engine.sellBuilding(on: id, by: player.id)
+        for attempt in 0..<3 {
+            do {
+                let reply = try await transport.respond(to: AssetProtocol.prompt(for: AssetSnapshot(engine: engine, player: player), correctingMalformedReply: attempt > 0))
+                let decision = try AssetProtocol.decision(from: reply)
+                let applied: Bool
+                switch decision {
+                case .done: return .done
+                case let .mortgage(id): applied = engine.mortgage(spaceID: id, by: player.id)
+                case let .unmortgage(id): applied = engine.unmortgage(spaceID: id, by: player.id)
+                case let .build(id): applied = engine.buyBuilding(on: id, by: player.id)
+                case let .sellBuilding(id): applied = engine.sellBuilding(on: id, by: player.id)
+                }
+                guard applied else { throw AssetProtocolError.illegalAction("engine validation failed") }
+                return decision
+            } catch let error as AssetProtocolError {
+                if attempt == 2 { throw error }
+            }
         }
-        guard applied else { throw AssetProtocolError.illegalAction("engine validation failed") }
-        return decision
+        throw AssetProtocolError.malformedReply
     }
 }
 
@@ -483,7 +529,13 @@ struct HermesTurnTransport: PlayerTurnTransport {
         request.httpMethod = "POST"
         request.timeoutInterval = 120
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONEncoder().encode(Request(model: backend.model, messages: [.init(role: "user", content: prompt)], maxTokens: 128, temperature: 0))
+        request.httpBody = try JSONEncoder().encode(Request(
+            model: backend.model,
+            messages: [.init(role: "user", content: prompt)],
+            maxTokens: 128,
+            temperature: 0,
+            chatTemplateKwargs: ["enable_thinking": false]
+        ))
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode),
               let reply = try? JSONDecoder().decode(Response.self, from: data).choices.first?.message.content?.trimmingCharacters(in: .whitespacesAndNewlines), !reply.isEmpty else { throw HermesTurnTransportError.invalidResponse }
@@ -501,6 +553,20 @@ struct HermesTurnTransport: PlayerTurnTransport {
         return (url, model)
     }
     private static func value(_ text: String) -> String { text.split(separator: ":", maxSplits: 1).dropFirst().joined(separator: ":").trimmingCharacters(in: .whitespaces) }
-    private struct Request: Encodable { struct Message: Encodable { let role: String; let content: String }; let model: String; let messages: [Message]; let maxTokens: Int; let temperature: Double; enum CodingKeys: String, CodingKey { case model, messages, temperature; case maxTokens = "max_tokens" } }
+    struct Request: Encodable {
+        struct Message: Encodable { let role: String; let content: String }
+
+        let model: String
+        let messages: [Message]
+        let maxTokens: Int
+        let temperature: Double
+        let chatTemplateKwargs: [String: Bool]
+
+        enum CodingKeys: String, CodingKey {
+            case model, messages, temperature
+            case maxTokens = "max_tokens"
+            case chatTemplateKwargs = "chat_template_kwargs"
+        }
+    }
     private struct Response: Decodable { struct Choice: Decodable { struct Message: Decodable { let content: String? }; let message: Message }; let choices: [Choice] }
 }

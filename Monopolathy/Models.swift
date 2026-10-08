@@ -14,7 +14,12 @@ enum PlayerEndpoint: String, CaseIterable, Identifiable, Codable {
 
     var id: String { rawValue }
 
-    var displayName: String { rawValue }
+    var displayName: String {
+        switch self {
+        case .hermesLocal: "hermes-organon"
+        default: rawValue
+        }
+    }
 
     var hermesProfileName: String? {
         switch self {

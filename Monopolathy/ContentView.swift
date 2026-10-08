@@ -467,20 +467,30 @@ struct ContentView: View {
         guard assetWindowPlayerID != player.id else { return true }
         assetWindowPlayerID = player.id
         guard player.endpoint.hermesProfileName != nil else { playerTurnStatus = "ChatGPT connection is not configured yet."; return false }
+        var seenAssetStates = Set<String>()
         for _ in 0..<40 {
+            guard let currentPlayer = game.currentPlayer else { return false }
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys]
+            let snapshot = AssetSnapshot(engine: game, player: currentPlayer)
+            let state = String(data: (try? encoder.encode(snapshot)) ?? Data(), encoding: .utf8) ?? ""
+            guard seenAssetStates.insert(state).inserted else {
+                playerTurnStatus = "\(player.name) repeated an optional asset state; continuing play."
+                return true
+            }
             isAskingPlayer = true
             playerTurnStatus = "Waiting for \(player.name)'s asset decision…"
             defer { isAskingPlayer = false }
             do {
-                let decision = try await AssetCoordinator().requestDecision(engine: game, player: player, transport: HermesTurnTransport(endpoint: player.endpoint))
+                let decision = try await AssetCoordinator().requestDecision(engine: game, player: currentPlayer, transport: HermesTurnTransport(endpoint: currentPlayer.endpoint))
                 if decision == .done { return true }
             } catch {
                 playerTurnStatus = error.localizedDescription
                 return false
             }
         }
-        playerTurnStatus = "Asset-management limit reached for \(player.name)."
-        return false
+        playerTurnStatus = "Optional asset-management limit reached for \(player.name); continuing play."
+        return true
     }
 
     @MainActor private func settleOutstandingDebt() async -> Bool {
@@ -508,6 +518,10 @@ struct ContentView: View {
             return false
         }
         isAskingPlayer = false
+        if game.declareBankruptcyIfNoLiquidationOptions(by: player.id) {
+            playerTurnStatus = "\(player.name) has no assets left to liquidate and is bankrupt."
+            return true
+        }
         for _ in 0..<40 {
             isAskingPlayer = true
             playerTurnStatus = "Waiting for \(player.name) to settle debt…"
@@ -540,9 +554,30 @@ enum EndpointProbe {
             let (data, response) = try await URLSession.shared.data(for: request)
             guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else { return .unavailable(reason: "Model service unavailable") }
             let models = try JSONDecoder().decode(ModelList.self, from: data)
-            guard models.data.contains(where: { $0.id == backend.model }) else { return .unavailable(reason: "Expected model not loaded") }
+            guard models.data.contains(where: { modelMatches($0, configuredModel: backend.model) }) else {
+                return .unavailable(reason: "Expected model not loaded")
+            }
             return .available(detail: "Model ready")
         } catch { return .unavailable(reason: "Model service not reachable") }
+    }
+
+    /// llama.cpp may publish a loaded GGUF under its absolute file path rather
+    /// than the shorter alias configured in Hermes. Compare canonical complete
+    /// identifiers only; this never affects action or rules validation.
+    static func modelMatches(_ serverModel: ModelList.Model, configuredModel: String) -> Bool {
+        let configured = canonicalModelIdentifier(configuredModel)
+        guard !configured.isEmpty else { return false }
+        return ([serverModel.id] + (serverModel.aliases ?? [])).contains {
+            canonicalModelIdentifier($0) == configured
+        }
+    }
+
+    private static func canonicalModelIdentifier(_ identifier: String) -> String {
+        let filename = URL(fileURLWithPath: identifier).lastPathComponent
+        let basename = filename.lowercased().hasSuffix(".gguf")
+            ? String(filename.dropLast(5))
+            : filename
+        return basename.lowercased().unicodeScalars.filter(CharacterSet.alphanumerics.contains).map(String.init).joined()
     }
 
     private static func selectedBackend(in text: String) -> (api: URL, model: String)? {
@@ -577,5 +612,12 @@ enum EndpointProbe {
         text.split(separator: separator, maxSplits: 1).dropFirst().joined(separator: String(separator)).trimmingCharacters(in: .whitespaces)
     }
 
-    private struct ModelList: Decodable { struct Model: Decodable { let id: String }; let data: [Model] }
+    struct ModelList: Decodable {
+        struct Model: Decodable {
+            let id: String
+            let aliases: [String]?
+        }
+
+        let data: [Model]
+    }
 }

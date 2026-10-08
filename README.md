@@ -80,3 +80,9 @@ xcodebuild -project Monopolathy.xcodeproj -scheme Monopolathy -configuration Deb
 
 The project targets macOS 14 or later and does not require a powered-on remote
 machine to build or run its offline lobby.
+
+## App bundle
+
+A freshly built Debug bundle is available at `dist/Monopolathy.app`. It is a
+copyable local artifact; rebuild it with the Debug scheme before distributing a
+newer version.

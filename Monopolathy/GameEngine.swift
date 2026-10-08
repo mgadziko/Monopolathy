@@ -307,13 +307,17 @@ final class GameEngine: ObservableObject {
         return true
     }
 
-    @discardableResult
-    func mortgage(spaceID: Int, by playerID: UUID) -> Bool {
+    func canMortgage(spaceID: Int, by playerID: UUID) -> Bool {
         guard let player = player(withID: playerID), player.properties.contains(spaceID),
               board[spaceID].isPurchasable, !mortgagedSpaceIDs.contains(spaceID),
               buildingsBySpaceID[spaceID, default: 0] == 0 else { return false }
         let group = StandardRules.colorSet(for: spaceID)
-        guard group.allSatisfy({ buildingsBySpaceID[$0, default: 0] == 0 }), let index = players.firstIndex(where: { $0.id == playerID }) else { return false }
+        return group.allSatisfy { buildingsBySpaceID[$0, default: 0] == 0 }
+    }
+
+    @discardableResult
+    func mortgage(spaceID: Int, by playerID: UUID) -> Bool {
+        guard canMortgage(spaceID: spaceID, by: playerID), let index = players.firstIndex(where: { $0.id == playerID }) else { return false }
         players[index].cash += StandardRules.mortgageValue(for: board[spaceID])
         mortgagedSpaceIDs.insert(spaceID)
         append("\(players[index].name) mortgaged \(board[spaceID].name).")
@@ -586,6 +590,19 @@ final class GameEngine: ObservableObject {
         case .extraRoll: beginExtraRoll()
         }
         return true
+    }
+
+    /// After any voluntary trade opportunity, a player with no legal way to
+    /// sell buildings or mortgage property has exhausted the asset-management
+    /// choices Monopoly permits and must proceed to bankruptcy.
+    @discardableResult
+    func declareBankruptcyIfNoLiquidationOptions(by playerID: UUID) -> Bool {
+        guard let debt = outstandingDebt, debt.playerID == playerID,
+              let player = player(withID: playerID), player.cash < 0,
+              !player.properties.contains(where: { canSellBuilding(on: $0, by: playerID) || canMortgage(spaceID: $0, by: playerID) }) else {
+            return false
+        }
+        return resolveOutstandingDebt(by: playerID)
     }
 
     private func recordDebtIfNeeded(playerID: UUID, creditorID: UUID?) {
